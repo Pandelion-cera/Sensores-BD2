@@ -35,8 +35,11 @@ class MeasurementCreate(BaseModel):
 class MeasurementResponse(BaseModel):
     sensor_id: str
     timestamp: datetime
-    temperature: Optional[float]
-    humidity: Optional[float]
+    temperatura: Optional[float] = Field(None, alias="temperature")
+    humedad: Optional[float] = Field(None, alias="humidity")
     ciudad: Optional[str] = None
     pais: Optional[str] = None
+    
+    class Config:
+        populate_by_name = True
 

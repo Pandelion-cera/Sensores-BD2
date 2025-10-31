@@ -36,6 +36,8 @@ export default function MeasurementsPage() {
   const [measurements, setMeasurements] = useState<Measurement[]>([])
   const [stats, setStats] = useState<LocationStats | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const measurementsPerPage = 50
 
   // Set default dates (last 7 days)
   useEffect(() => {
@@ -56,6 +58,7 @@ export default function MeasurementsPage() {
     try {
       setLoading(true)
       setHasSearched(true)
+      setCurrentPage(1) // Reset to first page
 
       // Build params
       const params: any = {}
@@ -112,15 +115,33 @@ export default function MeasurementsPage() {
     return Object.values(grouped).map((g: any) => ({
       time: g.time,
       temperatura: g.temps.length > 0 
-        ? (g.temps.reduce((a: number, b: number) => a + b, 0) / g.temps.length).toFixed(1)
+        ? Number((g.temps.reduce((a: number, b: number) => a + b, 0) / g.temps.length).toFixed(1))
         : null,
       humedad: g.hums.length > 0 
-        ? (g.hums.reduce((a: number, b: number) => a + b, 0) / g.hums.length).toFixed(1)
+        ? Number((g.hums.reduce((a: number, b: number) => a + b, 0) / g.hums.length).toFixed(1))
         : null
     }))
   }
 
   const chartData = formatChartData()
+
+  // Pagination logic
+  const totalPages = Math.ceil(measurements.length / measurementsPerPage)
+  const startIndex = (currentPage - 1) * measurementsPerPage
+  const endIndex = startIndex + measurementsPerPage
+  const currentMeasurements = measurements.slice(startIndex, endIndex)
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1)
+    }
+  }
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -332,19 +353,76 @@ export default function MeasurementsPage() {
               </CardContent>
             </Card>
 
-            {/* Información adicional */}
+            {/* Tabla de Mediciones */}
             <Card>
               <CardHeader>
-                <CardTitle>Información</CardTitle>
+                <CardTitle>Mediciones Individuales</CardTitle>
+                <p className="text-sm text-gray-500 mt-2">
+                  Mostrando {startIndex + 1}-{Math.min(endIndex, measurements.length)} de {measurements.length} mediciones
+                </p>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-gray-600">
-                  Los datos mostrados corresponden a todas las mediciones de sensores ubicados 
-                  en <strong>{ciudad}, {pais}</strong> durante el período seleccionado.
-                  {startDate && endDate && (
-                    <> Los gráficos muestran promedios horarios para mejor visualización.</>
-                  )}
-                </p>
+                {currentMeasurements.length > 0 ? (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2 px-4">Fecha y Hora</th>
+                            <th className="text-left py-2 px-4">Sensor ID</th>
+                            <th className="text-right py-2 px-4">Temperatura</th>
+                            <th className="text-right py-2 px-4">Humedad</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {currentMeasurements.map((m, idx) => (
+                            <tr key={idx} className="border-b hover:bg-gray-50">
+                              <td className="py-2 px-4">
+                                {new Date(m.timestamp).toLocaleString('es-ES')}
+                              </td>
+                              <td className="py-2 px-4 text-xs font-mono">
+                                {m.sensor_id}
+                              </td>
+                              <td className="text-right py-2 px-4 font-medium">
+                                {m.temperatura != null ? `${m.temperatura.toFixed(1)}°C` : 'N/A'}
+                              </td>
+                              <td className="text-right py-2 px-4 font-medium">
+                                {m.humedad != null ? `${m.humedad.toFixed(1)}%` : 'N/A'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                      <div className="flex justify-between items-center mt-4">
+                        <Button 
+                          variant="outline" 
+                          onClick={handlePrevPage}
+                          disabled={currentPage === 1}
+                        >
+                          Anterior
+                        </Button>
+                        <span className="text-sm text-gray-600">
+                          Página {currentPage} de {totalPages}
+                        </span>
+                        <Button 
+                          variant="outline" 
+                          onClick={handleNextPage}
+                          disabled={currentPage === totalPages}
+                        >
+                          Siguiente
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-center text-gray-500 py-8">
+                    No hay mediciones para mostrar
+                  </p>
+                )}
               </CardContent>
             </Card>
           </>

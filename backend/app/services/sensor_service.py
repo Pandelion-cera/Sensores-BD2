@@ -24,8 +24,11 @@ class SensorService:
         return self.sensor_repo.create(sensor_data)
     
     def get_sensor(self, sensor_id: str) -> Optional[Sensor]:
-        """Get sensor by ID"""
-        return self.sensor_repo.get_by_id(sensor_id)
+        """Get sensor by ID (tries both _id and sensor_id)"""
+        sensor = self.sensor_repo.get_by_id(sensor_id)
+        if not sensor:
+            sensor = self.sensor_repo.get_by_sensor_id(sensor_id)
+        return sensor
     
     def get_all_sensors(
         self,
@@ -52,8 +55,11 @@ class SensorService:
         measurement_data: MeasurementCreate
     ) -> Dict[str, Any]:
         """Register a new measurement for a sensor"""
-        # Get sensor info
+        # Get sensor info - try by _id first, then by sensor_id (UUID)
         sensor = self.sensor_repo.get_by_id(sensor_id)
+        if not sensor:
+            sensor = self.sensor_repo.get_by_sensor_id(sensor_id)
+        
         if not sensor:
             raise ValueError("Sensor not found")
         
@@ -87,9 +93,14 @@ class SensorService:
         sensor_id: str,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None
-    ) -> List[MeasurementResponse]:
+    ) -> List[Dict[str, Any]]:
         """Get measurements for a sensor"""
+        # Try to get sensor by MongoDB _id first, then by sensor_id (UUID)
         sensor = self.sensor_repo.get_by_id(sensor_id)
+        if not sensor:
+            # If not found by _id, try by sensor_id (UUID)
+            sensor = self.sensor_repo.get_by_sensor_id(sensor_id)
+        
         if not sensor:
             raise ValueError("Sensor not found")
         
@@ -106,14 +117,14 @@ class SensorService:
         )
         
         return [
-            MeasurementResponse(
-                sensor_id=m.sensor_id,
-                timestamp=m.timestamp,
-                temperature=m.temperature,
-                humidity=m.humidity,
-                ciudad=sensor.ciudad,
-                pais=sensor.pais
-            )
+            {
+                "sensor_id": m.sensor_id,
+                "timestamp": m.timestamp,
+                "temperatura": m.temperature,
+                "humedad": m.humidity,
+                "ciudad": sensor.ciudad,
+                "pais": sensor.pais
+            }
             for m in measurements
         ]
     
@@ -131,12 +142,25 @@ class SensorService:
         if not start_date:
             start_date = end_date - timedelta(days=1)
         
-        return self.measurement_repo.get_by_location(
+        measurements = self.measurement_repo.get_by_location(
             pais,
             ciudad,
             start_date,
             end_date
         )
+        
+        # Map fields to Spanish
+        return [
+            {
+                "sensor_id": m["sensor_id"],
+                "timestamp": m["timestamp"],
+                "temperatura": m.get("temperature"),
+                "humedad": m.get("humidity"),
+                "ciudad": m.get("ciudad"),
+                "pais": m.get("pais")
+            }
+            for m in measurements
+        ]
     
     def get_location_stats(
         self,
@@ -152,12 +176,32 @@ class SensorService:
         if not start_date:
             start_date = end_date - timedelta(days=1)
         
-        return self.measurement_repo.get_stats_by_location(
+        stats = self.measurement_repo.get_stats_by_location(
             pais,
             ciudad,
             start_date,
             end_date
         )
+        
+        # Flatten the stats structure to match frontend expectations
+        if "temperatura" in stats and isinstance(stats["temperatura"], dict):
+            stats["temperatura_max"] = stats["temperatura"].get("max")
+            stats["temperatura_min"] = stats["temperatura"].get("min")
+            stats["temperatura_avg"] = stats["temperatura"].get("avg")
+            del stats["temperatura"]
+        
+        if "humedad" in stats and isinstance(stats["humedad"], dict):
+            stats["humedad_max"] = stats["humedad"].get("max")
+            stats["humedad_min"] = stats["humedad"].get("min")
+            stats["humedad_avg"] = stats["humedad"].get("avg")
+            del stats["humedad"]
+        
+        # Rename count to total_mediciones
+        if "count" in stats:
+            stats["total_mediciones"] = stats["count"]
+            del stats["count"]
+        
+        return stats
     
     def get_dashboard_stats(self) -> Dict[str, Any]:
         """Get dashboard statistics"""

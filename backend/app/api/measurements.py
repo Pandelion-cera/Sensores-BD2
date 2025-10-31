@@ -26,7 +26,7 @@ def get_sensor_service(
     return SensorService(sensor_repo, measurement_repo, alert_service)
 
 
-@router.get("/sensor/{sensor_id}", response_model=List[MeasurementResponse])
+@router.get("/sensor/{sensor_id}")
 def get_sensor_measurements(
     sensor_id: str,
     start_date: Optional[str] = Query(None, description="ISO format date"),

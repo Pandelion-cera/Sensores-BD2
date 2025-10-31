@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Dialog } from '@/components/ui/dialog'
 import { api } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
@@ -13,6 +16,16 @@ export default function ProcessesPage() {
   const [requests, setRequests] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
+  
+  // Modal states
+  const [requestModalOpen, setRequestModalOpen] = useState(false)
+  const [resultModalOpen, setResultModalOpen] = useState(false)
+  const [selectedProcess, setSelectedProcess] = useState<any>(null)
+  const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null)
+  const [selectedRequest, setSelectedRequest] = useState<any>(null)
+  const [execution, setExecution] = useState<any>(null)
+  const [formParams, setFormParams] = useState<{ [key: string]: string }>({})
+  const [submitting, setSubmitting] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -40,6 +53,123 @@ export default function ProcessesPage() {
     }
   }
 
+  const handleRequestClick = (process: any) => {
+    setSelectedProcess(process)
+    setSelectedProcessId(process.id || process._id)
+    setFormParams({})
+    setRequestModalOpen(true)
+  }
+
+  const handleSubmitRequest = async () => {
+    if (!selectedProcessId) {
+      alert('Error: No se seleccionó un proceso')
+      return
+    }
+    
+    try {
+      setSubmitting(true)
+      const requestData = {
+        process_id: selectedProcessId,
+        parametros: formParams
+      }
+      await api.requestProcess(requestData)
+      alert('Solicitud enviada exitosamente')
+      setRequestModalOpen(false)
+      loadData()
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || error?.message || error?.response?.data || 'Error al enviar solicitud'
+      alert(typeof errorMessage === 'string' ? errorMessage : JSON.stringify(errorMessage))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleViewResult = async (request: any) => {
+    try {
+      setSelectedRequest(request)
+      const requestId = request.id || request._id
+      const executionData = await api.getExecution(requestId)
+      setExecution(executionData)
+      setResultModalOpen(true)
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Error al cargar resultado'
+      alert(errorMessage)
+    }
+  }
+
+  const handleExecute = async (request: any) => {
+    try {
+      setSubmitting(true)
+      const requestId = request.id || request._id
+      const executionData = await api.executeProcess(requestId)
+      setExecution(executionData)
+      setSelectedRequest(request)
+      setResultModalOpen(true)
+      loadData()
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Error al ejecutar proceso'
+      alert(errorMessage)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const renderFormField = (key: string, schema: any) => {
+    const type = schema || 'string'
+    const value = formParams[key] || ''
+
+    if (type === 'date' || type === 'datetime') {
+      return (
+        <div className="mb-4">
+          <Label htmlFor={key}>
+            {key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+          </Label>
+          <Input
+            id={key}
+            type="datetime-local"
+            value={value}
+            onChange={(e) => setFormParams({ ...formParams, [key]: e.target.value })}
+            required
+          />
+        </div>
+      )
+    }
+
+    if (type === 'float' || type === 'number') {
+      return (
+        <div className="mb-4">
+          <Label htmlFor={key}>
+            {key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+          </Label>
+          <Input
+            id={key}
+            type="number"
+            step="0.01"
+            value={value}
+            onChange={(e) => setFormParams({ ...formParams, [key]: e.target.value })}
+            required
+          />
+        </div>
+      )
+    }
+
+    // Default: string
+    return (
+      <div className="mb-4">
+        <Label htmlFor={key}>
+          {key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+        </Label>
+        <Input
+          id={key}
+          type="text"
+          value={value}
+          onChange={(e) => setFormParams({ ...formParams, [key]: e.target.value })}
+          required
+        />
+      </div>
+    )
+  }
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completado':
@@ -54,6 +184,8 @@ export default function ProcessesPage() {
         return 'bg-gray-100 text-gray-800'
     }
   }
+
+  const isAdminOrTecnico = user?.role === 'administrador' || user?.role === 'tecnico'
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -98,7 +230,7 @@ export default function ProcessesPage() {
                     <p className="text-sm text-gray-600 mb-3">{process.descripcion}</p>
                     <div className="flex justify-between items-center">
                       <span className="text-xs text-gray-500">Tipo: {process.tipo}</span>
-                      <Button size="sm" onClick={() => alert('Funcionalidad de solicitud en desarrollo')}>
+                      <Button size="sm" onClick={() => handleRequestClick(process)}>
                         Solicitar
                       </Button>
                     </div>
@@ -130,9 +262,21 @@ export default function ProcessesPage() {
                         Solicitado: {formatDate(request.fecha_solicitud)}
                       </div>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(request.estado)}`}>
-                      {request.estado}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(request.estado)}`}>
+                        {request.estado}
+                      </span>
+                      {request.estado === 'completado' && (
+                        <Button size="sm" onClick={() => handleViewResult(request)}>
+                          Ver Resultado
+                        </Button>
+                      )}
+                      {request.estado === 'pendiente' && isAdminOrTecnico && (
+                        <Button size="sm" onClick={() => handleExecute(request)} disabled={submitting}>
+                          Ejecutar
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -140,7 +284,87 @@ export default function ProcessesPage() {
           </CardContent>
         </Card>
       </main>
+
+      {/* Request Modal */}
+      <Dialog 
+        open={requestModalOpen} 
+        onOpenChange={setRequestModalOpen}
+        title={selectedProcess?.nombre}
+      >
+        <div>
+          <p className="text-sm text-gray-600 mb-4">{selectedProcess?.descripcion}</p>
+          <p className="text-sm font-medium mb-4">
+            Costo: {selectedProcess && formatCurrency(selectedProcess.costo)}
+          </p>
+          
+          {selectedProcess?.parametros_schema && (
+            <div className="space-y-2">
+              {Object.entries(selectedProcess.parametros_schema).map(([key, schema]: [string, any]) => (
+                <div key={key}>
+                  {renderFormField(key, schema)}
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <div className="flex justify-end gap-3 mt-6">
+            <Button variant="outline" onClick={() => setRequestModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSubmitRequest} disabled={submitting}>
+              {submitting ? 'Enviando...' : 'Solicitar'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Result Modal */}
+      <Dialog 
+        open={resultModalOpen} 
+        onOpenChange={setResultModalOpen}
+        title="Resultado de Ejecución"
+      >
+        <div>
+          {execution && (
+            <>
+              <div className="mb-4">
+                <p className="text-sm text-gray-600">
+                  Estado: <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(execution.estado)}`}>
+                    {execution.estado}
+                  </span>
+                </p>
+                {execution.fecha_ejecucion && (
+                  <p className="text-sm text-gray-600 mt-2">
+                    Fecha: {formatDate(execution.fecha_ejecucion)}
+                  </p>
+                )}
+              </div>
+              
+              {execution.error_message && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                  <p className="text-red-800 font-medium">Error:</p>
+                  <p className="text-red-600 text-sm">{execution.error_message}</p>
+                </div>
+              )}
+              
+              {execution.resultado && (
+                <div className="bg-gray-50 border rounded-lg p-4 mb-4">
+                  <p className="text-sm font-medium mb-2">Resultado:</p>
+                  <pre className="text-xs overflow-auto max-h-96 whitespace-pre-wrap">
+                    {JSON.stringify(execution.resultado, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </>
+          )}
+          
+          <div className="flex justify-end">
+            <Button onClick={() => setResultModalOpen(false)}>
+              Cerrar
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   )
 }
-
