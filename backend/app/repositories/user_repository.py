@@ -51,7 +51,8 @@ class UserRepository:
             if user:
                 user["_id"] = str(user["_id"])
                 return User(**user)
-        except:
+        except Exception as e:
+            print(f"[DEBUG] Error in get_by_id for user_id '{user_id}': {e}")
             return None
         return None
     
