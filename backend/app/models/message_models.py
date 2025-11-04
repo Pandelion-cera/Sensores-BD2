@@ -50,6 +50,7 @@ class MessageResponse(BaseModel):
     sender_name: Optional[str] = None
     recipient_type: MessageType
     recipient_id: str
+    recipient_name: Optional[str] = None  # Group name or user name
     timestamp: datetime
     content: str
     

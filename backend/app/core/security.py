@@ -66,3 +66,12 @@ def get_current_user_data(credentials: HTTPAuthorizationCredentials = Depends(se
     
     return payload
 
+
+def require_admin_role(current_user: Dict[str, Any] = Depends(get_current_user_data)) -> Dict[str, Any]:
+    """Require admin role for access"""
+    if current_user.get("role") != "administrador":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user

@@ -47,7 +47,8 @@ class GroupRepository:
             if group:
                 group["_id"] = str(group["_id"])
                 return Group(**group)
-        except:
+        except Exception as e:
+            print(f"[DEBUG] Error in get_by_id for group_id '{group_id}': {e}")
             return None
         return None
     
