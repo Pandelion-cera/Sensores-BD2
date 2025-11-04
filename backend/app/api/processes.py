@@ -10,6 +10,7 @@ from app.core.database import get_mongo_db, get_neo4j_driver, get_cassandra_sess
 from app.repositories.process_repository import ProcessRepository
 from app.repositories.measurement_repository import MeasurementRepository
 from app.repositories.sensor_repository import SensorRepository
+from app.repositories.invoice_repository import InvoiceRepository
 from app.core.config import settings
 
 router = APIRouter()
@@ -23,6 +24,8 @@ def get_process_service(
     process_repo = ProcessRepository(mongo_db, neo4j_driver)
     measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
     sensor_repo = SensorRepository(mongo_db)
+    invoice_repo = InvoiceRepository(mongo_db)
+
     return ProcessService(process_repo, measurement_repo, sensor_repo)
 
 

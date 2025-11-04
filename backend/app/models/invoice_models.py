@@ -4,6 +4,7 @@ from datetime import datetime
 from enum import Enum
 
 
+
 class InvoiceStatus(str, Enum):
     PENDING = "pendiente"
     PAID = "pagada"

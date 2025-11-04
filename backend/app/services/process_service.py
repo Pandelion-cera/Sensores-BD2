@@ -1,5 +1,7 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from uuid import uuid4
+from app.repositories.invoice_repository import InvoiceRepository
 
 from app.repositories.process_repository import ProcessRepository
 from app.repositories.measurement_repository import MeasurementRepository
@@ -15,11 +17,14 @@ class ProcessService:
         self,
         process_repo: ProcessRepository,
         measurement_repo: MeasurementRepository,
-        sensor_repo: SensorRepository
+        sensor_repo: SensorRepository,
+        invoice_repo: InvoiceRepository = None,
     ):
         self.process_repo = process_repo
         self.measurement_repo = measurement_repo
         self.sensor_repo = sensor_repo
+        self.invoice_repo = invoice_repo
+
     
     # Process Definition Management
     def create_process(self, process_data: ProcessCreate) -> Process:
@@ -44,6 +49,50 @@ class ProcessService:
         
         # Create request
         request = self.process_repo.create_request(user_id, request_data)
+
+        try:
+            costo = float(getattr(process, "costo", 0))
+        except Exception:
+            costo = 0.0
+        
+        if not self.invoice_repo:
+            request.invoice_created = False
+            return request
+
+        
+        cantidad = getattr(request, "cantidad", 1) or 1
+        subtotal = round(costo * int(cantidad), 2)
+
+        invoice_id = str(uuid4())
+        item_id = str(uuid4())
+        now = datetime.utcnow()
+
+        invoice_doc = {
+            "id": invoice_id,
+            "user_id": user_id,
+            "fecha_emision": now.isoformat(),
+            "total": subtotal,
+            "estado": "pendiente",
+            "request_id": request.id,
+            "created_at": now.isoformat(),
+        }
+
+        invoice_item_doc = {
+            "id": item_id,
+            "invoice_id": invoice_id,
+            "request_id": request.id,
+            "process_id": process.id,
+            "process_name": getattr(process, "nombre", getattr(process, "name", "Proceso")),
+            "cantidad": int(cantidad),
+            "subtotal": subtotal,
+        }
+
+        self.invoice_repo.create_invoice(invoice_doc)
+        self.invoice_repo.create_invoice_item(invoice_item_doc)
+
+        request.invoice_id = invoice_id
+        request.invoice_created = True
+
         
         # TODO: Trigger async execution
         # For now, mark as pending

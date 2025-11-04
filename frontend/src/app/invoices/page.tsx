@@ -13,17 +13,20 @@ export default function InvoicesPage() {
   const [account, setAccount] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
+  const [payingAll, setPayingAll] = useState(false)
+
   useEffect(() => {
     loadData()
   }, [])
 
   const loadData = async () => {
     try {
-      // Load invoices
+      setLoading(true)
+      // Carga facturas
       const invoicesData = await api.getMyInvoices()
       setInvoices(invoicesData)
 
-      // Load account
+      // Carga cuenta
       const accountData = await api.getMyAccount()
       setAccount(accountData)
     } catch (error) {
@@ -40,9 +43,56 @@ export default function InvoicesPage() {
         metodo: 'tarjeta_credito'
       })
       alert('Pago registrado exitosamente')
-      loadData() // Reload data
+      loadData() // Recargar datos
     } catch (error: any) {
       alert(error.response?.data?.detail || 'Error al procesar el pago')
+    }
+  }
+
+  // pagar todas las facturas pendientes
+  const handlePayAll = async () => {
+    const pending = invoices.filter((i) => i.estado === 'pendiente')
+
+    if (pending.length === 0) {
+      alert('No hay facturas pendientes para pagar.')
+      return
+    }
+
+    // pedir confirmación al usuario
+    const confirmMsg =
+      pending.length === 1
+        ? `¿Confirmás pagar la factura #${pending[0].id.slice(-8)} por ${formatCurrency(pending[0].total)}?`
+        : `Vas a pagar ${pending.length} facturas (total aproximado: ${formatCurrency(
+            pending.reduce((s, i) => s + Number(i.total || 0), 0)
+          )}). ¿Confirmás?`
+
+    if (!confirm(confirmMsg)) return
+
+    setPayingAll(true)
+    try {
+      const results = await Promise.allSettled(
+        pending.map((inv) =>
+          api.payInvoice(inv.id, {
+            monto: inv.total,
+            metodo: 'tarjeta_credito'
+          })
+        )
+      )
+
+      const successes = results.filter((r) => r.status === 'fulfilled').length
+      const failures = results.filter((r) => r.status === 'rejected').length
+
+      let message = `${successes} pagos realizados correctamente.`
+      if (failures > 0) message += ` ${failures} pagos fallaron.`
+      alert(message)
+
+      // recargar datos para reflejar cambios
+      await loadData()
+    } catch (err) {
+      console.error('Error paying all:', err)
+      alert('Ocurrió un error al procesar pagos masivos.')
+    } finally {
+      setPayingAll(false)
     }
   }
 
@@ -60,6 +110,8 @@ export default function InvoicesPage() {
         return 'bg-gray-100 text-gray-800'
     }
   }
+
+  const pendingInvoices = invoices.filter((i) => i.estado === 'pendiente')
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -111,9 +163,28 @@ export default function InvoicesPage() {
         {/* Invoices List */}
         <Card>
           <CardHeader>
-            <CardTitle>Mis Facturas</CardTitle>
-            <CardDescription>Listado de facturas emitidas</CardDescription>
+            <div className="w-full flex items-center justify-between">
+              <div>
+                <CardTitle>Mis Facturas</CardTitle>
+                <CardDescription>Listado de facturas emitidas</CardDescription>
+              </div>
+
+              {/* NUEVO: Botón "Pagar todas" visible cuando hay más de 1 pendiente */}
+              {pendingInvoices.length > 1 && (
+                <div className="ml-4">
+                  <Button
+                    onClick={handlePayAll}
+                    disabled={loading || payingAll}
+                    // agrega clase extra para diferenciar (opcional)
+                    className="ml-2"
+                  >
+                    {payingAll ? 'Procesando pagos...' : `Pagar todas (${pendingInvoices.length})`}
+                  </Button>
+                </div>
+              )}
+            </div>
           </CardHeader>
+
           <CardContent>
             {loading ? (
               <p className="text-gray-500">Cargando facturas...</p>
@@ -141,10 +212,21 @@ export default function InvoicesPage() {
                     <div className="text-sm space-y-1 mb-3">
                       <div className="font-medium">Ítems:</div>
                       {invoice.items.map((item: any, idx: number) => (
-                        <div key={idx} className="text-gray-600 pl-4">
-                          - {item.process_name}: {formatCurrency(item.subtotal)}
-                        </div>
-                      ))}
+                      <div key={idx} className="text-gray-600 pl-4 flex justify-between items-center">
+                      <div>
+                      <div className="font-medium">{item.process_name}</div>
+                      <div className="text-xs text-gray-500">
+                      {item.process_id && (
+                      <button onClick={() => router.push(`/processes/${item.process_id}`)} className="underline text-xs mr-2">Ver proceso</button>
+                      )}
+                      {item.request_id && (
+                      <button onClick={() => router.push(`/processes/requests/${item.request_id}`)} className="underline text-xs">Ver solicitud</button>
+                    )}
+                    </div>
+                    </div>
+                    <div>{formatCurrency(item.subtotal)}</div>
+                    </div>    
+                ))}
                     </div>
 
                     {invoice.estado === 'pendiente' && (
@@ -165,4 +247,3 @@ export default function InvoicesPage() {
     </div>
   )
 }
-
