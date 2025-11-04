@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Dialog } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectOption } from '@/components/ui/select'
 import { api } from '@/lib/api'
 import { formatDate } from '@/lib/utils'
@@ -279,13 +279,16 @@ export default function MessagesPage() {
         )}
       </main>
 
-      {/* Send Message Modal */}
-      <Dialog 
-        open={sendModalOpen} 
+            {/* Send Message Modal */}
+      <Dialog
+        open={sendModalOpen}
         onOpenChange={setSendModalOpen}
-        title="Enviar Mensaje"
       >
-        <div className="space-y-4">
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Enviar Mensaje</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
           <div>
             <Label htmlFor="recipient_type">Tipo</Label>
             <Select
@@ -348,8 +351,8 @@ export default function MessagesPage() {
             />
           </div>
 
-          <div className="flex justify-end gap-3 mt-6">
-            <Button variant="outline" onClick={() => setSendModalOpen(false)}>
+                    <div className="flex justify-end gap-3 mt-6">
+            <Button variant="outline" onClick={() => setSendModalOpen(false)}>  
               Cancelar
             </Button>
             <Button onClick={handleSendMessage} disabled={submitting}>
@@ -357,6 +360,7 @@ export default function MessagesPage() {
             </Button>
           </div>
         </div>
+        </DialogContent>
       </Dialog>
     </div>
   )

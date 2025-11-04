@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Dialog } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectOption } from '@/components/ui/select'
 import { api } from '@/lib/api'
 
@@ -278,13 +278,16 @@ export default function SensorsPage() {
         )}
       </main>
 
-      {/* Sensor Modal */}
-      <Dialog 
-        open={sensorModalOpen} 
+            {/* Sensor Modal */}
+      <Dialog
+        open={sensorModalOpen}
         onOpenChange={setSensorModalOpen}
-        title={editingSensor ? 'Editar Sensor' : 'Crear Sensor'}
       >
-        <div className="space-y-4">
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingSensor ? 'Editar Sensor' : 'Crear Sensor'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
           <div>
             <Label htmlFor="nombre">Nombre</Label>
             <Input
@@ -371,6 +374,7 @@ export default function SensorsPage() {
             </Button>
           </div>
         </div>
+        </DialogContent>
       </Dialog>
     </div>
   )

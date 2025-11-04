@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Dialog } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { api } from '@/lib/api'
 import { formatCurrency, formatDate } from '@/lib/utils'
 
@@ -285,85 +285,93 @@ export default function ProcessesPage() {
         </Card>
       </main>
 
-      {/* Request Modal */}
-      <Dialog 
-        open={requestModalOpen} 
+            {/* Request Modal */}
+      <Dialog
+        open={requestModalOpen}
         onOpenChange={setRequestModalOpen}
-        title={selectedProcess?.nombre}
       >
-        <div>
-          <p className="text-sm text-gray-600 mb-4">{selectedProcess?.descripcion}</p>
-          <p className="text-sm font-medium mb-4">
-            Costo: {selectedProcess && formatCurrency(selectedProcess.costo)}
-          </p>
-          
-          {selectedProcess?.parametros_schema && (
-            <div className="space-y-2">
-              {Object.entries(selectedProcess.parametros_schema).map(([key, schema]: [string, any]) => (
-                <div key={key}>
-                  {renderFormField(key, schema)}
-                </div>
-              ))}
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedProcess?.nombre}</DialogTitle>
+          </DialogHeader>
+          <div>
+            <p className="text-sm text-gray-600 mb-4">{selectedProcess?.descripcion}</p>
+            <p className="text-sm font-medium mb-4">
+              Costo: {selectedProcess && formatCurrency(selectedProcess.costo)} 
+            </p>
+
+            {selectedProcess?.parametros_schema && (
+              <div className="space-y-2">
+                {Object.entries(selectedProcess.parametros_schema).map(([key, schema]: [string, any]) => (
+                  <div key={key}>
+                    {renderFormField(key, schema)}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 mt-6">
+              <Button variant="outline" onClick={() => setRequestModalOpen(false)}>
+                Cancelar
+              </Button>
+              <Button onClick={handleSubmitRequest} disabled={submitting}>        
+                {submitting ? 'Enviando...' : 'Solicitar'}
+              </Button>
             </div>
-          )}
-          
-          <div className="flex justify-end gap-3 mt-6">
-            <Button variant="outline" onClick={() => setRequestModalOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleSubmitRequest} disabled={submitting}>
-              {submitting ? 'Enviando...' : 'Solicitar'}
-            </Button>
           </div>
-        </div>
+        </DialogContent>
       </Dialog>
 
       {/* Result Modal */}
       <Dialog 
         open={resultModalOpen} 
         onOpenChange={setResultModalOpen}
-        title="Resultado de Ejecución"
       >
-        <div>
-          {execution && (
-            <>
-              <div className="mb-4">
-                <p className="text-sm text-gray-600">
-                  Estado: <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(execution.estado)}`}>
-                    {execution.estado}
-                  </span>
-                </p>
-                {execution.fecha_ejecucion && (
-                  <p className="text-sm text-gray-600 mt-2">
-                    Fecha: {formatDate(execution.fecha_ejecucion)}
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Resultado de Ejecución</DialogTitle>
+          </DialogHeader>
+          <div>
+            {execution && (
+              <>
+                <div className="mb-4">
+                  <p className="text-sm text-gray-600">
+                    Estado: <span className={`px-2 py-1 rounded-full text-xs font-semibold ${getStatusColor(execution.estado)}`}>
+                      {execution.estado}
+                    </span>
                   </p>
+                  {execution.fecha_ejecucion && (
+                    <p className="text-sm text-gray-600 mt-2">
+                      Fecha: {formatDate(execution.fecha_ejecucion)}
+                    </p>
+                  )}
+                </div>
+                
+                {execution.error_message && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                    <p className="text-red-800 font-medium">Error:</p>
+                    <p className="text-red-600 text-sm">{execution.error_message}</p>
+                  </div>
                 )}
-              </div>
-              
-              {execution.error_message && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                  <p className="text-red-800 font-medium">Error:</p>
-                  <p className="text-red-600 text-sm">{execution.error_message}</p>
-                </div>
-              )}
-              
-              {execution.resultado && (
-                <div className="bg-gray-50 border rounded-lg p-4 mb-4">
-                  <p className="text-sm font-medium mb-2">Resultado:</p>
-                  <pre className="text-xs overflow-auto max-h-96 whitespace-pre-wrap">
-                    {JSON.stringify(execution.resultado, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </>
-          )}
-          
-          <div className="flex justify-end">
-            <Button onClick={() => setResultModalOpen(false)}>
-              Cerrar
-            </Button>
+                
+                {execution.resultado && (
+                  <div className="bg-gray-50 border rounded-lg p-4 mb-4">
+                    <p className="text-sm font-medium mb-2">Resultado:</p>
+                    <pre className="text-xs overflow-auto max-h-96 whitespace-pre-wrap">
+                      {JSON.stringify(execution.resultado, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </>
+            )}
+            
+            <div className="flex justify-end">
+              <Button onClick={() => setResultModalOpen(false)}>
+                Cerrar
+              </Button>
+            </div>
           </div>
-        </div>
+        </DialogContent>
       </Dialog>
     </div>
   )

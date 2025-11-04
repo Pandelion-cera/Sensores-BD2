@@ -22,7 +22,7 @@ const Dialog: React.FC<DialogProps> = ({ open, onOpenChange, children }) => {
       onClick={handleBackdropClick}
     >
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50" />
+      <div className="fixed inset-0 bg-black bg-opacity-50 z-40" />
 
       {/* Dialog container */}
       <div className="relative z-50">{children}</div>
