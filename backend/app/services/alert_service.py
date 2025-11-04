@@ -1,4 +1,5 @@
 from typing import List, Optional, Dict, Any
+from datetime import datetime
 
 from app.repositories.alert_repository import AlertRepository
 from app.models.alert_models import Alert, AlertCreate, AlertStatus, AlertType
@@ -23,10 +24,34 @@ class AlertService:
         skip: int = 0,
         limit: int = 100,
         estado: Optional[AlertStatus] = None,
-        sensor_id: Optional[str] = None
+        sensor_id: Optional[str] = None,
+        tipo: Optional[str] = None,
+        fecha_desde: Optional[datetime] = None,
+        fecha_hasta: Optional[datetime] = None
     ) -> List[Alert]:
         """Get all alerts with filters"""
-        return self.alert_repo.get_all(skip, limit, estado, sensor_id)
+        return self.alert_repo.get_all(skip, limit, estado, sensor_id, tipo, fecha_desde, fecha_hasta)
+    
+    def get_alerts_by_location(
+        self,
+        pais: Optional[str] = None,
+        ciudad: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+        estado: Optional[AlertStatus] = None,
+        fecha_desde: Optional[datetime] = None,
+        fecha_hasta: Optional[datetime] = None
+    ) -> List[Dict[str, Any]]:
+        """Get alerts filtered by location"""
+        return self.alert_repo.get_by_location(
+            pais=pais,
+            ciudad=ciudad,
+            skip=skip,
+            limit=limit,
+            estado=estado,
+            fecha_desde=fecha_desde,
+            fecha_hasta=fecha_hasta
+        )
     
     def get_active_alerts(self, skip: int = 0, limit: int = 100) -> List[Alert]:
         """Get all active alerts"""

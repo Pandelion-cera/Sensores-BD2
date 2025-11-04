@@ -5,11 +5,13 @@ from app.models.sensor_models import Sensor, SensorCreate, SensorUpdate, SensorR
 from app.models.measurement_models import MeasurementCreate
 from app.services.sensor_service import SensorService
 from app.services.alert_service import AlertService
+from app.services.alert_rule_service import AlertRuleService
 from app.core.security import get_current_user_data
 from app.core.database import get_mongo_db, get_cassandra_session, get_redis_client
 from app.repositories.sensor_repository import SensorRepository
 from app.repositories.measurement_repository import MeasurementRepository
 from app.repositories.alert_repository import AlertRepository
+from app.repositories.alert_rule_repository import AlertRuleRepository
 from app.core.config import settings
 
 router = APIRouter()
@@ -24,7 +26,12 @@ def get_sensor_service(
     measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
     alert_repo = AlertRepository(mongo_db, redis_client)
     alert_service = AlertService(alert_repo)
-    return SensorService(sensor_repo, measurement_repo, alert_service)
+    
+    # Initialize alert rule service
+    rule_repo = AlertRuleRepository(mongo_db)
+    alert_rule_service = AlertRuleService(rule_repo, alert_repo)
+    
+    return SensorService(sensor_repo, measurement_repo, alert_service, alert_rule_service)
 
 
 @router.post("", response_model=SensorResponse, status_code=status.HTTP_201_CREATED)
