@@ -2,17 +2,20 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useMutation } from '@apollo/client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { api } from '@/lib/api'
+import { LOGIN, REGISTER } from '@/graphql/mutations'
 
 export default function LoginPage() {
   const router = useRouter()
   const [isLogin, setIsLogin] = useState(true)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const [loginMutation, { loading: loginLoading }] = useMutation(LOGIN)
+  const [registerMutation, { loading: registerLoading }] = useMutation(REGISTER)
 
   const [loginData, setLoginData] = useState({
     email: '',
@@ -27,33 +30,46 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError('')
 
     try {
-      const response = await api.login(loginData)
+      const { data } = await loginMutation({
+        variables: {
+          input: {
+            email: loginData.email,
+            password: loginData.password,
+          },
+        },
+      })
       
-      // Store token and user data
-      localStorage.setItem('token', response.access_token)
-      localStorage.setItem('user', JSON.stringify(response.user))
-      localStorage.setItem('session_id', response.session_id)
-      
-      // Redirect to dashboard
-      router.push('/dashboard')
+      if (data?.login) {
+        // Store token and user data
+        localStorage.setItem('token', data.login.accessToken)
+        localStorage.setItem('user', JSON.stringify(data.login.user))
+        localStorage.setItem('session_id', data.login.sessionId)
+        
+        // Redirect to dashboard
+        router.push('/dashboard')
+      }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Error al iniciar sesión')
-    } finally {
-      setLoading(false)
+      setError(err.message || 'Error al iniciar sesión')
     }
   }
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError('')
 
     try {
-      await api.register(registerData)
+      await registerMutation({
+        variables: {
+          input: {
+            nombreCompleto: registerData.nombre_completo,
+            email: registerData.email,
+            password: registerData.password,
+          },
+        },
+      })
       
       // After successful registration, switch to login
       setIsLogin(true)
@@ -61,9 +77,7 @@ export default function LoginPage() {
       setError('') // Clear any previous errors
       alert('Registro exitoso! Ahora puedes iniciar sesión.')
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Error al registrarse')
-    } finally {
-      setLoading(false)
+      setError(err.message || 'Error al registrarse')
     }
   }
 
@@ -107,8 +121,8 @@ export default function LoginPage() {
                   {error}
                 </div>
               )}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Cargando...' : 'Iniciar Sesión'}
+              <Button type="submit" className="w-full" disabled={loginLoading}>
+                {loginLoading ? 'Cargando...' : 'Iniciar Sesión'}
               </Button>
               <div className="text-center text-sm">
                 <span className="text-muted-foreground">¿No tienes cuenta? </span>

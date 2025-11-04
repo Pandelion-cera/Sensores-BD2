@@ -1,13 +1,12 @@
+'use client'
+
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { ApolloProvider } from '@apollo/client'
+import { apolloClient } from '@/lib/apollo'
 import './globals.css'
 
 const inter = Inter({ subsets: ['latin'] })
-
-export const metadata: Metadata = {
-  title: 'Sensor Management System',
-  description: 'Sistema de gestión de sensores climáticos',
-}
 
 export default function RootLayout({
   children,
@@ -16,7 +15,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        <ApolloProvider client={apolloClient}>
+          {children}
+        </ApolloProvider>
+      </body>
     </html>
   )
 }

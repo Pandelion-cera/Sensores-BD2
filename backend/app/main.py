@@ -3,10 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from contextlib import asynccontextmanager
+from strawberry.fastapi import GraphQLRouter
 
 from app.core.config import settings
 from app.core.database import db_manager
-from app.api import api_router
+from app.graphql.schema import schema
+from app.graphql.context import get_context
 
 
 @asynccontextmanager
@@ -49,8 +51,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API router
-app.include_router(api_router, prefix="/api")
+# Include GraphQL router
+graphql_app = GraphQLRouter(schema, context_getter=get_context)
+app.include_router(graphql_app, prefix="/graphql")
 
 
 # Add validation error handler
@@ -72,8 +75,14 @@ def root():
     return {
         "message": "Sensor Management API",
         "version": settings.API_VERSION,
-        "docs": "/docs"
+        "graphql_endpoint": "/graphql",
+        "graphql_playground": "/graphql"
     }
+
+@app.get("/health")
+def health():
+    """Health check endpoint"""
+    return {"status": "healthy"}
 
 
 @app.get("/health")
