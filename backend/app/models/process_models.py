@@ -54,6 +54,8 @@ class ProcessRequest(BaseModel):
     fecha_solicitud: datetime = Field(default_factory=datetime.utcnow)
     estado: ProcessStatus = ProcessStatus.PENDING
     parametros: Dict[str, Any] = Field(default_factory=dict)
+    invoice_id: Optional[str] = None
+    invoice_created: bool = False
     
     class Config:
         populate_by_name = True

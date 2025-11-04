@@ -90,11 +90,35 @@ class ProcessRepository:
     
     def update_request_status(self, request_id: str, status: ProcessStatus) -> bool:
         """Update request status"""
-        result = self.requests_col.update_one(
-            {"_id": ObjectId(request_id)},
-            {"$set": {"estado": status}}
-        )
-        return result.modified_count > 0
+        try:
+            result = self.requests_col.update_one(
+                {"_id": ObjectId(request_id)},
+                {"$set": {"estado": status}}
+            )
+            return result.modified_count > 0
+        except Exception:
+            # fallback if _id is stored as string
+            result = self.requests_col.update_one(
+                {"_id": request_id},
+                {"$set": {"estado": status}}
+            )
+            return result.modified_count > 0
+
+    def update_request_invoice(self, request_id: str, invoice_id: str) -> bool:
+        """Update request with invoice information"""
+        try:
+            result = self.requests_col.update_one(
+                {"_id": ObjectId(request_id)},
+                {"$set": {"invoice_id": invoice_id, "invoice_created": True}}
+            )
+            return result.modified_count > 0
+        except Exception:
+            # fallback if _id is stored as string
+            result = self.requests_col.update_one(
+                {"_id": request_id},
+                {"$set": {"invoice_id": invoice_id, "invoice_created": True}}
+            )
+            return result.modified_count > 0
     
     # Execution CRUD
     def create_execution(self, execution_data: ExecutionCreate) -> Execution:

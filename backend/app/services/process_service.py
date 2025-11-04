@@ -90,8 +90,10 @@ class ProcessService:
         self.invoice_repo.create_invoice(invoice_doc)
         self.invoice_repo.create_invoice_item(invoice_item_doc)
 
-        request.invoice_id = invoice_id
-        request.invoice_created = True
+        # Update request with invoice information in database
+        self.process_repo.update_request_invoice(request.id, invoice_id)
+        # Reload request to get updated version with invoice info
+        request = self.process_repo.get_request(request.id)
 
         
         # TODO: Trigger async execution

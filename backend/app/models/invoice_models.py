@@ -20,6 +20,16 @@ class InvoiceItem(BaseModel):
     subtotal: float
 
 
+class InvoiceItemCreate(BaseModel):
+    """Model for creating a new invoice item"""
+    request_id: Optional[str] = None
+    process_id: Optional[str] = None
+    process_name: str
+    cantidad: int = 1
+    precio_unitario: Optional[float] = None
+    subtotal: float
+
+
 class Invoice(BaseModel):
     id: Optional[str] = Field(None, alias="_id")
     user_id: str
