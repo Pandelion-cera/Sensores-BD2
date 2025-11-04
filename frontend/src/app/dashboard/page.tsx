@@ -130,6 +130,14 @@ export default function DashboardPage() {
             >
               Mensajes
             </button>
+            {user?.role === 'administrador' && (
+              <button
+                onClick={() => router.push('/admin/groups')}
+                className="border-b-2 border-transparent py-4 px-1 text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              >
+                Admin Grupos
+              </button>
+            )}
           </div>
         </div>
       </nav>
@@ -262,6 +270,15 @@ export default function DashboardPage() {
               <CardDescription>Ver y enviar mensajes</CardDescription>
             </CardHeader>
           </Card>
+
+          {user?.role === 'administrador' && (
+            <Card className="cursor-pointer hover:shadow-lg transition" onClick={() => router.push('/admin/groups')}>
+              <CardHeader>
+                <CardTitle>Administrar Grupos</CardTitle>
+                <CardDescription>Gestionar grupos y miembros</CardDescription>
+              </CardHeader>
+            </Card>
+          )}
         </div>
       </main>
     </div>

@@ -30,20 +30,25 @@ def send_message(
 ):
     """Send a message (private or group)"""
     try:
-        return message_service.send_message(current_user["user_id"], message_data)
+        sender_id = current_user.get('user_id')
+        print(f"[DEBUG] POST /api/messages - sender_id={sender_id} (from JWT), recipient_type={message_data.recipient_type}, recipient_id={message_data.recipient_id}")
+        result = message_service.send_message(sender_id, message_data)
+        print(f"[DEBUG] Message sent successfully, message_id={result.id}")
+        return result
     except ValueError as e:
+        print(f"[DEBUG] ValueError in send_message: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.get("", response_model=List[MessageResponse])
+@router.get("")
 def get_my_messages(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     current_user: Dict[str, Any] = Depends(get_current_user_data),
     message_service: MessageService = Depends(get_message_service)
 ):
-    """Get messages sent to current user"""
-    return message_service.get_user_messages(current_user["user_id"], skip, limit)
+    """Get all messages for current user (private and group)"""
+    return message_service.get_all_user_messages(current_user["user_id"], skip, limit)
 
 
 @router.get("/groups/{group_id}", response_model=List[MessageResponse])
