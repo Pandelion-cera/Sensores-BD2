@@ -13,6 +13,7 @@ from desktop_app.ui.dashboard_widget import DashboardWidget
 from desktop_app.ui.sensors_widget import SensorsWidget
 from desktop_app.ui.measurements_widget import MeasurementsWidget
 from desktop_app.ui.alerts_widget import AlertsWidget
+from desktop_app.ui.alert_rules_widget import AlertRulesWidget
 from desktop_app.ui.messages_widget import MessagesWidget
 from desktop_app.ui.invoices_widget import InvoicesWidget
 from desktop_app.ui.processes_widget import ProcessesWidget
@@ -58,6 +59,12 @@ class MainWindow(QMainWindow):
         # Alerts tab
         self.alerts_widget = AlertsWidget()
         self.tabs.addTab(self.alerts_widget, "Alerts")
+        
+        # Alert Rules tab
+        user_role = self.session_manager.get_user_role()
+        if user_role in ["administrador", "tecnico"]:
+            self.alert_rules_widget = AlertRulesWidget()
+            self.tabs.addTab(self.alert_rules_widget, "Alert Rules")
         
         # Messages tab
         self.messages_widget = MessagesWidget()
@@ -130,21 +137,24 @@ class MainWindow(QMainWindow):
     
     def refresh_current_tab(self):
         """Refresh current tab"""
-        current_index = self.tabs.currentIndex()
-        if current_index == 0:  # Dashboard
+        current_widget = self.tabs.currentWidget()
+        
+        if current_widget == self.dashboard_widget:
             self.dashboard_widget.refresh()
-        elif current_index == 1:  # Sensors
+        elif current_widget == self.sensors_widget:
             self.sensors_widget.load_sensors()
-        elif current_index == 2:  # Measurements
+        elif current_widget == self.measurements_widget:
             # Measurements require search filters, so just refresh if they've already searched
             pass
-        elif current_index == 3:  # Alerts
+        elif current_widget == self.alerts_widget:
             self.alerts_widget.load_alerts()
-        elif current_index == 4:  # Messages
+        elif hasattr(self, 'alert_rules_widget') and current_widget == self.alert_rules_widget:
+            self.alert_rules_widget.load_rules()
+        elif current_widget == self.messages_widget:
             self.messages_widget.load_messages()
-        elif current_index == 5:  # Invoices
+        elif current_widget == self.invoices_widget:
             self.invoices_widget.load_invoices()
-        elif current_index == 6:  # Processes
+        elif current_widget == self.processes_widget:
             self.processes_widget.load_processes()
         self.status_bar.showMessage("Refreshed", 2000)
     

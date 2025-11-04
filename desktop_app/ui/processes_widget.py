@@ -79,6 +79,12 @@ class ProcessesWidget(QWidget):
         request_btn.clicked.connect(self.request_process)
         btn_layout.addWidget(request_btn)
         
+        user_role = self.session_manager.get_user_role()
+        if user_role in ["administrador", "tecnico"]:
+            execute_btn = QPushButton("Execute Selected Request")
+            execute_btn.clicked.connect(self.execute_selected_request)
+            btn_layout.addWidget(execute_btn)
+        
         refresh_btn = QPushButton("Refresh")
         refresh_btn.clicked.connect(self.load_processes)
         btn_layout.addWidget(refresh_btn)
@@ -174,3 +180,44 @@ class ProcessesWidget(QWidget):
                 self.load_processes()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to request process: {str(e)}")
+    
+    def execute_selected_request(self):
+        """Execute a selected process request (admin/tecnico only)"""
+        current_row = self.requests_table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Selection Error", "Please select a process request to execute")
+            return
+        
+        request_id = self.requests_table.item(current_row, 0).text()
+        
+        reply = QMessageBox.question(
+            self,
+            "Confirm Execution",
+            f"Execute process request {request_id}?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                mongo_db = db_manager.get_mongo_db()
+                neo4j_driver = db_manager.get_neo4j_driver()
+                cassandra_session = db_manager.get_cassandra_session()
+                
+                process_repo = ProcessRepository(mongo_db, neo4j_driver)
+                measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
+                sensor_repo = SensorRepository(mongo_db)
+                process_service = ProcessService(process_repo, measurement_repo, sensor_repo)
+                
+                execution = process_service.execute_process(request_id)
+                
+                if execution.estado.value == "completado":
+                    QMessageBox.information(self, "Success", f"Process executed successfully!\nExecution ID: {execution.id}")
+                elif execution.estado.value == "fallido":
+                    error_msg = execution.error_message or "Unknown error"
+                    QMessageBox.warning(self, "Execution Failed", f"Process execution failed:\n{error_msg}")
+                else:
+                    QMessageBox.information(self, "Info", f"Process execution status: {execution.estado.value}")
+                
+                self.load_processes()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to execute process: {str(e)}")
