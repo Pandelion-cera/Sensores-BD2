@@ -57,7 +57,10 @@ class AlertRepository:
         skip: int = 0,
         limit: int = 100,
         estado: Optional[AlertStatus] = None,
-        sensor_id: Optional[str] = None
+        sensor_id: Optional[str] = None,
+        tipo: Optional[str] = None,
+        fecha_desde: Optional[datetime] = None,
+        fecha_hasta: Optional[datetime] = None
     ) -> List[Alert]:
         """Get all alerts with optional filters"""
         query = {}
@@ -65,11 +68,69 @@ class AlertRepository:
             query["estado"] = estado
         if sensor_id:
             query["sensor_id"] = sensor_id
+        if tipo:
+            query["tipo"] = tipo
+        
+        # Filtrar por rango de fechas
+        if fecha_desde or fecha_hasta:
+            query["fecha_hora"] = {}
+            if fecha_desde:
+                query["fecha_hora"]["$gte"] = fecha_desde
+            if fecha_hasta:
+                query["fecha_hora"]["$lte"] = fecha_hasta
         
         alerts = []
         for alert in self.collection.find(query).sort("fecha_hora", -1).skip(skip).limit(limit):
             alert["_id"] = str(alert["_id"])
             alerts.append(Alert(**alert))
+        
+        return alerts
+    
+    def get_by_location(
+        self,
+        pais: Optional[str] = None,
+        ciudad: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+        estado: Optional[AlertStatus] = None,
+        fecha_desde: Optional[datetime] = None,
+        fecha_hasta: Optional[datetime] = None
+    ) -> List[Dict[str, Any]]:
+        """Get alerts filtered by location (searches in description field)"""
+        query = {}
+        
+        # Filtrar por ubicación en la descripción
+        location_patterns = []
+        if ciudad and pais:
+            location_patterns.append(f"{ciudad}, {pais}")
+            location_patterns.append(f"{ciudad}")
+        elif pais:
+            location_patterns.append(f"{pais}")
+        
+        if location_patterns:
+            # Buscar cualquiera de los patrones en la descripción
+            query["descripcion"] = {
+                "$regex": "|".join(location_patterns),
+                "$options": "i"  # case insensitive
+            }
+        
+        if estado:
+            query["estado"] = estado
+        
+        # Filtrar por rango de fechas
+        if fecha_desde or fecha_hasta:
+            query["fecha_hora"] = {}
+            if fecha_desde:
+                query["fecha_hora"]["$gte"] = fecha_desde
+            if fecha_hasta:
+                query["fecha_hora"]["$lte"] = fecha_hasta
+        
+        alerts = []
+        cursor = self.collection.find(query).sort("fecha_hora", -1).skip(skip).limit(limit)
+        
+        for alert in cursor:
+            alert["_id"] = str(alert["_id"])
+            alerts.append(alert)
         
         return alerts
     

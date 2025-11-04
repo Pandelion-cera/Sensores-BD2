@@ -12,8 +12,7 @@ class AlertType(str, Enum):
 
 class AlertStatus(str, Enum):
     ACTIVE = "activa"
-    RESOLVED = "resuelta"
-    ACKNOWLEDGED = "reconocida"
+    FINISHED = "finalizada"
 
 
 class Alert(BaseModel):
@@ -25,17 +24,23 @@ class Alert(BaseModel):
     estado: AlertStatus = AlertStatus.ACTIVE
     valor: Optional[float] = None
     umbral: Optional[float] = None
+    # Información de la regla que generó esta alerta (si aplica)
+    rule_id: Optional[str] = Field(None, description="ID de la regla que generó esta alerta")
+    rule_name: Optional[str] = Field(None, description="Nombre de la regla que generó esta alerta")
+    prioridad: Optional[int] = Field(None, ge=1, le=5, description="Prioridad de la alerta (heredada de la regla)")
     
     class Config:
         populate_by_name = True
         json_schema_extra = {
             "example": {
-                "tipo": "climatica",
+                "tipo": "umbral",
                 "sensor_id": "sensor123",
                 "descripcion": "Temperatura alta detectada",
                 "estado": "activa",
                 "valor": 45.0,
-                "umbral": 40.0
+                "umbral": 40.0,
+                "rule_name": "Ola de calor Buenos Aires",
+                "prioridad": 4
             }
         }
 
@@ -46,4 +51,7 @@ class AlertCreate(BaseModel):
     descripcion: str
     valor: Optional[float] = None
     umbral: Optional[float] = None
+    rule_id: Optional[str] = None
+    rule_name: Optional[str] = None
+    prioridad: Optional[int] = Field(None, ge=1, le=5)
 

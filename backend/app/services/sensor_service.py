@@ -3,9 +3,11 @@ from datetime import datetime, timedelta
 
 from app.repositories.sensor_repository import SensorRepository
 from app.repositories.measurement_repository import MeasurementRepository
+from app.repositories.alert_rule_repository import AlertRuleRepository
 from app.models.sensor_models import Sensor, SensorCreate, SensorUpdate, SensorStatus
 from app.models.measurement_models import MeasurementCreate, MeasurementResponse
 from app.services.alert_service import AlertService
+from app.services.alert_rule_service import AlertRuleService
 
 
 class SensorService:
@@ -13,11 +15,13 @@ class SensorService:
         self,
         sensor_repo: SensorRepository,
         measurement_repo: MeasurementRepository,
-        alert_service: AlertService
+        alert_service: AlertService,
+        alert_rule_service: Optional[AlertRuleService] = None
     ):
         self.sensor_repo = sensor_repo
         self.measurement_repo = measurement_repo
         self.alert_service = alert_service
+        self.alert_rule_service = alert_rule_service
     
     def create_sensor(self, sensor_data: SensorCreate) -> Sensor:
         """Create a new sensor"""
@@ -74,19 +78,48 @@ class SensorService:
             sensor.pais
         )
         
-        # Check for alert conditions
+        # Check for alert conditions (legacy thresholds from config)
         self.alert_service.check_measurement_thresholds(
             sensor,
             measurement_data.temperature,
             measurement_data.humidity
         )
         
-        return {
+        # Check against configured alert rules if service is available
+        triggered_rules = []
+        if self.alert_rule_service:
+            try:
+                triggered_rules = self.alert_rule_service.check_measurement_against_rules(
+                    sensor_id=sensor.sensor_id,
+                    pais=sensor.pais,
+                    ciudad=sensor.ciudad,
+                    region=None,  # Could be added to sensor model if needed
+                    temperatura=measurement_data.temperature,
+                    humedad=measurement_data.humidity,
+                    fecha=measurement.timestamp
+                )
+            except Exception as e:
+                print(f"Error checking alert rules: {e}")
+        
+        result = {
             "sensor_id": sensor.sensor_id,
             "timestamp": measurement.timestamp,
             "temperature": measurement.temperature,
             "humidity": measurement.humidity
         }
+        
+        # Add triggered rules info if any
+        if triggered_rules:
+            result["triggered_alerts"] = [
+                {
+                    "rule_name": tr["rule_name"],
+                    "prioridad": tr["prioridad"],
+                    "alert_id": tr["alert"].id
+                }
+                for tr in triggered_rules
+            ]
+        
+        return result
     
     def get_sensor_measurements(
         self,

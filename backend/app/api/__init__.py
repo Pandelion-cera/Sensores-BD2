@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api import auth, sensors, measurements, users, messages, processes, invoices, alerts
+from app.api import auth, sensors, measurements, users, messages, processes, invoices, alerts, alert_rules
 
 api_router = APIRouter()
 
@@ -12,4 +12,5 @@ api_router.include_router(messages.router, prefix="/messages", tags=["messages"]
 api_router.include_router(processes.router, prefix="/processes", tags=["processes"])
 api_router.include_router(invoices.router, prefix="/invoices", tags=["invoices"])
 api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
+api_router.include_router(alert_rules.router, prefix="/alert-rules", tags=["alert-rules"])
 
