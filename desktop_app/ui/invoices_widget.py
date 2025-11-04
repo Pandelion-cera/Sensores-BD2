@@ -32,14 +32,14 @@ class InvoicesWidget(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         
         # Title
-        title = QLabel("Invoices")
+        title = QLabel("Facturas")
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
         
         # Account summary
-        self.account_group = QGroupBox("Account Summary")
+        self.account_group = QGroupBox("Resumen de Cuenta")
         account_layout = QVBoxLayout()
-        self.account_label = QLabel("Loading account information...")
+        self.account_label = QLabel("Cargando información de cuenta...")
         account_layout.addWidget(self.account_label)
         self.account_group.setLayout(account_layout)
         layout.addWidget(self.account_group)
@@ -48,7 +48,7 @@ class InvoicesWidget(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(6)
         self.table.setHorizontalHeaderLabels([
-            "ID", "Date", "Items", "Total", "Status", "Due Date"
+            "ID", "Fecha", "Artículos", "Total", "Estado", "Fecha de Vencimiento"
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -57,7 +57,7 @@ class InvoicesWidget(QWidget):
         
         # Buttons
         btn_layout = QHBoxLayout()
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = QPushButton("Actualizar")
         refresh_btn.clicked.connect(self.load_invoices)
         btn_layout.addWidget(refresh_btn)
         btn_layout.addStretch()
@@ -69,7 +69,7 @@ class InvoicesWidget(QWidget):
         try:
             user_id = self.session_manager.get_user_id()
             if not user_id:
-                QMessageBox.warning(self, "Error", "User not logged in")
+                QMessageBox.warning(self, "Error", "Usuario no conectado")
                 return
             
             mongo_db = db_manager.get_mongo_db()
@@ -95,7 +95,7 @@ class InvoicesWidget(QWidget):
                         fecha_str = str(invoice.fecha_emision)
                 self.table.setItem(row, 1, QTableWidgetItem(fecha_str))
                 
-                items_text = f"{len(invoice.items)} items"
+                items_text = f"{len(invoice.items)} artículos"
                 self.table.setItem(row, 2, QTableWidgetItem(items_text))
                 
                 self.table.setItem(row, 3, QTableWidgetItem(f"${invoice.total:.2f}"))
@@ -120,12 +120,12 @@ class InvoicesWidget(QWidget):
             account = invoice_service.get_user_account(user_id)
             if account:
                 self.account_label.setText(
-                    f"Current Balance: ${account.saldo:.2f} | "
-                    f"Total Movements: {len(account.movimientos) if account.movimientos else 0}"
+                    f"Saldo Actual: ${account.saldo:.2f} | "
+                    f"Total de Movimientos: {len(account.movimientos) if account.movimientos else 0}"
                 )
             else:
-                self.account_label.setText("No account information available")
+                self.account_label.setText("No hay información de cuenta disponible")
                 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load invoices: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al cargar facturas: {str(e)}")
             self.table.setRowCount(0)

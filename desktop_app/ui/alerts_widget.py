@@ -32,41 +32,41 @@ class AlertsWidget(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         
         # Title
-        title = QLabel("Alerts")
+        title = QLabel("Alertas")
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
         
         # Filters
-        filter_group = QGroupBox("Filters")
+        filter_group = QGroupBox("Filtros")
         filter_layout = QVBoxLayout()
         
         # First row
         row1 = QHBoxLayout()
-        row1.addWidget(QLabel("Status:"))
+        row1.addWidget(QLabel("Estado:"))
         self.status_filter = QComboBox()
         self.status_filter.addItems(["", "activa", "resuelta", "reconocida"])
         row1.addWidget(self.status_filter)
         
-        row1.addWidget(QLabel("Type:"))
+        row1.addWidget(QLabel("Tipo:"))
         self.type_filter = QComboBox()
         self.type_filter.addItems(["", "sensor", "climatica", "umbral"])
         row1.addWidget(self.type_filter)
         
-        row1.addWidget(QLabel("Sensor ID:"))
+        row1.addWidget(QLabel("ID Sensor:"))
         self.sensor_id_filter = QLineEdit()
-        self.sensor_id_filter.setPlaceholderText("Filter by sensor ID")
+        self.sensor_id_filter.setPlaceholderText("Filtrar por ID de sensor")
         row1.addWidget(self.sensor_id_filter)
         filter_layout.addLayout(row1)
         
         # Second row - dates
         row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Start Date:"))
+        row2.addWidget(QLabel("Fecha Inicio:"))
         self.start_date = QDateEdit()
         self.start_date.setCalendarPopup(True)
         self.start_date.setDate(QDate.currentDate().addDays(-30))
         row2.addWidget(self.start_date)
         
-        row2.addWidget(QLabel("End Date:"))
+        row2.addWidget(QLabel("Fecha Fin:"))
         self.end_date = QDateEdit()
         self.end_date.setCalendarPopup(True)
         self.end_date.setDate(QDate.currentDate())
@@ -75,15 +75,15 @@ class AlertsWidget(QWidget):
         
         # Buttons
         btn_layout = QHBoxLayout()
-        filter_btn = QPushButton("Apply Filters")
+        filter_btn = QPushButton("Aplicar Filtros")
         filter_btn.clicked.connect(self.load_alerts)
         btn_layout.addWidget(filter_btn)
         
-        clear_btn = QPushButton("Clear Filters")
+        clear_btn = QPushButton("Limpiar Filtros")
         clear_btn.clicked.connect(self.clear_filters)
         btn_layout.addWidget(clear_btn)
         
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = QPushButton("Actualizar")
         refresh_btn.clicked.connect(self.load_alerts)
         btn_layout.addWidget(refresh_btn)
         
@@ -93,14 +93,14 @@ class AlertsWidget(QWidget):
         layout.addWidget(filter_group)
         
         # Stats
-        self.stats_label = QLabel("Loading alerts...")
+        self.stats_label = QLabel("Cargando alertas...")
         layout.addWidget(self.stats_label)
         
         # Table
         self.table = QTableWidget()
         self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels([
-            "ID", "Type", "Sensor ID", "Description", "Value", "Threshold", "Status", "Date"
+            "ID", "Tipo", "ID Sensor", "Descripción", "Valor", "Umbral", "Estado", "Fecha"
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -109,7 +109,7 @@ class AlertsWidget(QWidget):
         
         # Action buttons
         action_layout = QHBoxLayout()
-        resolve_btn = QPushButton("Mark as Resolved")
+        resolve_btn = QPushButton("Marcar como Resuelta")
         resolve_btn.clicked.connect(self.resolve_selected_alert)
         action_layout.addWidget(resolve_btn)
         action_layout.addStretch()
@@ -159,7 +159,7 @@ class AlertsWidget(QWidget):
             # Update stats
             active_count = len([a for a in alerts if a.estado == AlertStatus.ACTIVE])
             total_count = len(alerts)
-            self.stats_label.setText(f"Total: {total_count} alerts ({active_count} active)")
+            self.stats_label.setText(f"Total: {total_count} alertas ({active_count} activas)")
             
             # Update table
             self.table.setRowCount(len(alerts))
@@ -188,21 +188,21 @@ class AlertsWidget(QWidget):
                             item.setBackground(Qt.GlobalColor.red.lighter(180))
                 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load alerts: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al cargar alertas: {str(e)}")
             self.table.setRowCount(0)
     
     def resolve_selected_alert(self):
         current_row = self.table.currentRow()
         if current_row < 0:
-            QMessageBox.warning(self, "Selection Error", "Please select an alert to resolve")
+            QMessageBox.warning(self, "Error de Selección", "Por favor seleccione una alerta para resolver")
             return
         
         alert_id = self.table.item(current_row, 0).text()
         
         reply = QMessageBox.question(
             self,
-            "Confirm",
-            f"Mark alert {alert_id} as resolved?",
+            "Confirmar",
+            f"¿Marcar alerta {alert_id} como resuelta?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
@@ -218,9 +218,9 @@ class AlertsWidget(QWidget):
                     from desktop_app.models.alert_models import AlertUpdate
                     update = AlertUpdate(estado=AlertStatus.RESOLVED)
                     alert_repo.update(alert_id, update)
-                    QMessageBox.information(self, "Success", "Alert marked as resolved")
+                    QMessageBox.information(self, "Éxito", "Alerta marcada como resuelta")
                     self.load_alerts()
                 else:
-                    QMessageBox.warning(self, "Error", "Alert not found")
+                    QMessageBox.warning(self, "Error", "Alerta no encontrada")
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to resolve alert: {str(e)}")
+                QMessageBox.critical(self, "Error", f"Error al resolver alerta: {str(e)}")

@@ -32,7 +32,7 @@ class MessagesWidget(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         
         # Title
-        title = QLabel("Messages")
+        title = QLabel("Mensajes")
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
         
@@ -45,14 +45,14 @@ class MessagesWidget(QWidget):
         self.private_table = QTableWidget()
         self.private_table.setColumnCount(5)
         self.private_table.setHorizontalHeaderLabels([
-            "From", "Type", "Content", "Date", "ID"
+            "De", "Tipo", "Contenido", "Fecha", "ID"
         ])
         self.private_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.private_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.private_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         private_layout.addWidget(self.private_table)
         private_container.setLayout(private_layout)
-        self.tabs.addTab(private_container, "Private Messages")
+        self.tabs.addTab(private_container, "Mensajes Privados")
         
         # Group messages tab
         group_container = QWidget()
@@ -60,20 +60,20 @@ class MessagesWidget(QWidget):
         self.group_table = QTableWidget()
         self.group_table.setColumnCount(5)
         self.group_table.setHorizontalHeaderLabels([
-            "From", "Type", "Content", "Date", "ID"
+            "De", "Tipo", "Contenido", "Fecha", "ID"
         ])
         self.group_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.group_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.group_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         group_layout.addWidget(self.group_table)
         group_container.setLayout(group_layout)
-        self.tabs.addTab(group_container, "Group Messages")
+        self.tabs.addTab(group_container, "Mensajes Grupales")
         
         layout.addWidget(self.tabs)
         
         # Buttons
         btn_layout = QHBoxLayout()
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = QPushButton("Actualizar")
         refresh_btn.clicked.connect(self.load_messages)
         btn_layout.addWidget(refresh_btn)
         btn_layout.addStretch()
@@ -85,7 +85,7 @@ class MessagesWidget(QWidget):
         try:
             user_id = self.session_manager.get_user_id()
             if not user_id:
-                QMessageBox.warning(self, "Error", "User not logged in")
+                QMessageBox.warning(self, "Error", "Usuario no conectado")
                 return
             
             mongo_db = db_manager.get_mongo_db()
@@ -103,8 +103,8 @@ class MessagesWidget(QWidget):
             private_msgs = all_messages.get("private", [])
             self.private_table.setRowCount(len(private_msgs))
             for row, msg in enumerate(private_msgs):
-                self.private_table.setItem(row, 0, QTableWidgetItem(msg.sender_name or "Unknown"))
-                self.private_table.setItem(row, 1, QTableWidgetItem("Private"))
+                self.private_table.setItem(row, 0, QTableWidgetItem(msg.sender_name or "Desconocido"))
+                self.private_table.setItem(row, 1, QTableWidgetItem("Privado"))
                 self.private_table.setItem(row, 2, QTableWidgetItem(msg.content))
                 fecha_str = ""
                 if msg.timestamp:
@@ -119,8 +119,8 @@ class MessagesWidget(QWidget):
             group_msgs = all_messages.get("group", [])
             self.group_table.setRowCount(len(group_msgs))
             for row, msg in enumerate(group_msgs):
-                self.group_table.setItem(row, 0, QTableWidgetItem(msg.sender_name or "Unknown"))
-                self.group_table.setItem(row, 1, QTableWidgetItem("Group"))
+                self.group_table.setItem(row, 0, QTableWidgetItem(msg.sender_name or "Desconocido"))
+                self.group_table.setItem(row, 1, QTableWidgetItem("Grupal"))
                 self.group_table.setItem(row, 2, QTableWidgetItem(msg.content))
                 fecha_str = ""
                 if msg.timestamp:
@@ -132,4 +132,4 @@ class MessagesWidget(QWidget):
                 self.group_table.setItem(row, 4, QTableWidgetItem(str(msg.id)))
                 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load messages: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al cargar mensajes: {str(e)}")

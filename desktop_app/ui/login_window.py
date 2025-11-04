@@ -21,7 +21,7 @@ class LoginWindow(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Sensor Management - Login")
+        self.setWindowTitle("Gestión de Sensores - Inicio de Sesión")
         self.setMinimumWidth(400)
         self.setMinimumHeight(350)
         
@@ -45,7 +45,7 @@ class LoginWindow(QDialog):
         layout = QVBoxLayout()
         
         # Title
-        title = QLabel("Sensor Management System")
+        title = QLabel("Sistema de Gestión de Sensores")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title.setStyleSheet("font-size: 18px; font-weight: bold; margin: 10px;")
         layout.addWidget(title)
@@ -55,11 +55,11 @@ class LoginWindow(QDialog):
         
         # Login tab
         login_tab = self.create_login_tab()
-        self.tabs.addTab(login_tab, "Login")
+        self.tabs.addTab(login_tab, "Iniciar Sesión")
         
         # Register tab
         register_tab = self.create_register_tab()
-        self.tabs.addTab(register_tab, "Register")
+        self.tabs.addTab(register_tab, "Registrarse")
         
         layout.addWidget(self.tabs)
         self.setLayout(layout)
@@ -79,15 +79,15 @@ class LoginWindow(QDialog):
         layout.addWidget(self.login_email)
         
         # Password
-        password_label = QLabel("Password:")
+        password_label = QLabel("Contraseña:")
         self.login_password = QLineEdit()
         self.login_password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.login_password.setPlaceholderText("Enter your password")
+        self.login_password.setPlaceholderText("Ingrese su contraseña")
         layout.addWidget(password_label)
         layout.addWidget(self.login_password)
         
         # Login button
-        login_btn = QPushButton("Login")
+        login_btn = QPushButton("Iniciar Sesión")
         login_btn.setStyleSheet("background-color: #007bff; color: white; padding: 8px;")
         login_btn.clicked.connect(self.handle_login)
         layout.addWidget(login_btn)
@@ -104,29 +104,29 @@ class LoginWindow(QDialog):
         layout.setContentsMargins(20, 20, 20, 20)
         
         # Full name
-        name_label = QLabel("Full Name:")
+        name_label = QLabel("Nombre Completo:")
         self.register_name = QLineEdit()
-        self.register_name.setPlaceholderText("John Doe")
+        self.register_name.setPlaceholderText("Juan Pérez")
         layout.addWidget(name_label)
         layout.addWidget(self.register_name)
         
         # Email
         email_label = QLabel("Email:")
         self.register_email = QLineEdit()
-        self.register_email.setPlaceholderText("user@example.com")
+        self.register_email.setPlaceholderText("usuario@ejemplo.com")
         layout.addWidget(email_label)
         layout.addWidget(self.register_email)
         
         # Password
-        password_label = QLabel("Password:")
+        password_label = QLabel("Contraseña:")
         self.register_password = QLineEdit()
         self.register_password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.register_password.setPlaceholderText("Minimum 6 characters")
+        self.register_password.setPlaceholderText("Mínimo 6 caracteres")
         layout.addWidget(password_label)
         layout.addWidget(self.register_password)
         
         # Register button
-        register_btn = QPushButton("Register")
+        register_btn = QPushButton("Registrarse")
         register_btn.setStyleSheet("background-color: #28a745; color: white; padding: 8px;")
         register_btn.clicked.connect(self.handle_register)
         layout.addWidget(register_btn)
@@ -141,7 +141,7 @@ class LoginWindow(QDialog):
         password = self.login_password.text()
         
         if not email or not password:
-            QMessageBox.warning(self, "Validation Error", "Please fill in all fields")
+            QMessageBox.warning(self, "Error de Validación", "Por favor complete todos los campos")
             return
         
         try:
@@ -159,9 +159,9 @@ class LoginWindow(QDialog):
             self.accept()
             
         except ValueError as e:
-            QMessageBox.critical(self, "Login Failed", str(e))
+            QMessageBox.critical(self, "Error de Inicio de Sesión", str(e))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Ocurrió un error: {str(e)}")
     
     def handle_register(self):
         """Handle register button click"""
@@ -170,11 +170,11 @@ class LoginWindow(QDialog):
         password = self.register_password.text()
         
         if not name or not email or not password:
-            QMessageBox.warning(self, "Validation Error", "Please fill in all fields")
+            QMessageBox.warning(self, "Error de Validación", "Por favor complete todos los campos")
             return
         
         if len(password) < 6:
-            QMessageBox.warning(self, "Validation Error", "Password must be at least 6 characters")
+            QMessageBox.warning(self, "Error de Validación", "La contraseña debe tener al menos 6 caracteres")
             return
         
         try:
@@ -186,15 +186,15 @@ class LoginWindow(QDialog):
             result = self.auth_service.register(user_data)
             QMessageBox.information(
                 self,
-                "Registration Successful",
-                f"User {result['email']} registered successfully!\nPlease login with your credentials."
+                "Registro Exitoso",
+                f"Usuario {result['email']} registrado exitosamente!\nPor favor inicie sesión con sus credenciales."
             )
             # Switch to login tab
             self.tabs.setCurrentIndex(0)
             self.login_email.setText(email)
             
         except ValueError as e:
-            QMessageBox.critical(self, "Registration Failed", str(e))
+            QMessageBox.critical(self, "Error de Registro", str(e))
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Ocurrió un error: {str(e)}")
 

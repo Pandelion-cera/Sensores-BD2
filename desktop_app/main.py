@@ -51,18 +51,41 @@ def main():
         )
         sys.exit(1)
     
-    # Show login window
-    login_window = LoginWindow()
+    # Main application loop - allows returning to login after logout
+    logout_requested = False
     
-    if login_window.exec() == login_window.DialogCode.Accepted:
+    while True:
+        # Show login window
+        login_window = LoginWindow()
+        
+        if login_window.exec() != login_window.DialogCode.Accepted:
+            # Login cancelled or failed, exit application
+            break
+        
         # Login successful, show main window
         main_window = MainWindow()
         main_window.show()
         
-        sys.exit(app.exec())
-    else:
-        # Login cancelled or failed
-        sys.exit(0)
+        # Reset logout flag
+        logout_requested = False
+        
+        # Handle logout - when logout signal is emitted, set flag and quit event loop
+        def handle_logout():
+            nonlocal logout_requested
+            logout_requested = True
+            app.quit()  # Exit the event loop to return to login
+        
+        main_window.logout_requested.connect(handle_logout)
+        
+        # Run the main window event loop
+        app.exec()
+        
+        # If logout was requested, continue the loop to show login again
+        # Otherwise, the window was closed normally, so exit the application
+        if not logout_requested:
+            break
+    
+    sys.exit(0)
 
 
 if __name__ == "__main__":

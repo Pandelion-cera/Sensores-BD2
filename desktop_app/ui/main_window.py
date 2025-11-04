@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QTabWidget,
     QMenuBar, QStatusBar, QLabel, QPushButton, QMessageBox
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
 
 from desktop_app.utils.session_manager import SessionManager
@@ -22,9 +22,12 @@ from desktop_app.ui.processes_widget import ProcessesWidget
 class MainWindow(QMainWindow):
     """Main application window"""
     
+    # Signal emitted when user logs out
+    logout_requested = pyqtSignal()
+    
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Sensor Management System")
+        self.setWindowTitle("Sistema de Gestión de Sensores")
         self.setMinimumSize(1000, 700)
         
         self.session_manager = SessionManager.get_instance()
@@ -46,37 +49,37 @@ class MainWindow(QMainWindow):
         
         # Dashboard tab
         self.dashboard_widget = DashboardWidget()
-        self.tabs.addTab(self.dashboard_widget, "Dashboard")
+        self.tabs.addTab(self.dashboard_widget, "Tablero")
         
         # Sensors tab
         self.sensors_widget = SensorsWidget()
-        self.tabs.addTab(self.sensors_widget, "Sensors")
+        self.tabs.addTab(self.sensors_widget, "Sensores")
         
         # Measurements tab
         self.measurements_widget = MeasurementsWidget()
-        self.tabs.addTab(self.measurements_widget, "Measurements")
+        self.tabs.addTab(self.measurements_widget, "Mediciones")
         
         # Alerts tab
         self.alerts_widget = AlertsWidget()
-        self.tabs.addTab(self.alerts_widget, "Alerts")
+        self.tabs.addTab(self.alerts_widget, "Alertas")
         
         # Alert Rules tab
         user_role = self.session_manager.get_user_role()
         if user_role in ["administrador", "tecnico"]:
             self.alert_rules_widget = AlertRulesWidget()
-            self.tabs.addTab(self.alert_rules_widget, "Alert Rules")
+            self.tabs.addTab(self.alert_rules_widget, "Reglas de Alerta")
         
         # Messages tab
         self.messages_widget = MessagesWidget()
-        self.tabs.addTab(self.messages_widget, "Messages")
+        self.tabs.addTab(self.messages_widget, "Mensajes")
         
         # Invoices tab
         self.invoices_widget = InvoicesWidget()
-        self.tabs.addTab(self.invoices_widget, "Invoices")
+        self.tabs.addTab(self.invoices_widget, "Facturas")
         
         # Processes tab
         self.processes_widget = ProcessesWidget()
-        self.tabs.addTab(self.processes_widget, "Processes")
+        self.tabs.addTab(self.processes_widget, "Procesos")
         
         layout.addWidget(self.tabs)
         
@@ -90,35 +93,35 @@ class MainWindow(QMainWindow):
         # User info label
         user = self.session_manager.get_user()
         if user:
-            user_info = f"Logged in as: {user.get('nombre_completo', '')} ({user.get('role', '')})"
+            user_info = f"Conectado como: {user.get('nombre_completo', '')} ({user.get('role', '')})"
             self.status_bar.addWidget(QLabel(user_info))
         
-        self.status_bar.addPermanentWidget(QLabel("Ready"))
+        self.status_bar.addPermanentWidget(QLabel("Listo"))
     
     def create_menu_bar(self):
         """Create menu bar"""
         menubar = self.menuBar()
         
         # File menu
-        file_menu = menubar.addMenu("File")
+        file_menu = menubar.addMenu("Archivo")
         
-        logout_action = QAction("Logout", self)
+        logout_action = QAction("Cerrar Sesión", self)
         logout_action.triggered.connect(self.handle_logout)
         file_menu.addAction(logout_action)
         
-        exit_action = QAction("Exit", self)
+        exit_action = QAction("Salir", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
         
         # View menu
-        view_menu = menubar.addMenu("View")
-        refresh_action = QAction("Refresh", self)
+        view_menu = menubar.addMenu("Ver")
+        refresh_action = QAction("Actualizar", self)
         refresh_action.triggered.connect(self.refresh_current_tab)
         view_menu.addAction(refresh_action)
         
         # Help menu
-        help_menu = menubar.addMenu("Help")
-        about_action = QAction("About", self)
+        help_menu = menubar.addMenu("Ayuda")
+        about_action = QAction("Acerca de", self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
     
@@ -131,9 +134,9 @@ class MainWindow(QMainWindow):
             db_manager.get_neo4j_driver()
             db_manager.get_cassandra_session()
             db_manager.get_redis_client()
-            self.status_bar.showMessage("All databases connected", 3000)
+            self.status_bar.showMessage("Todas las bases de datos conectadas", 3000)
         except Exception as e:
-            self.status_bar.showMessage(f"Database connection error: {str(e)}", 0)
+            self.status_bar.showMessage(f"Error de conexión a base de datos: {str(e)}", 0)
     
     def refresh_current_tab(self):
         """Refresh current tab"""
@@ -156,14 +159,14 @@ class MainWindow(QMainWindow):
             self.invoices_widget.load_invoices()
         elif current_widget == self.processes_widget:
             self.processes_widget.load_processes()
-        self.status_bar.showMessage("Refreshed", 2000)
+        self.status_bar.showMessage("Actualizado", 2000)
     
     def handle_logout(self):
         """Handle logout"""
         reply = QMessageBox.question(
             self,
-            "Logout",
-            "Are you sure you want to logout?",
+            "Confirmar Cierre de Sesión",
+            "¿Está seguro que desea cerrar sesión?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
@@ -188,17 +191,19 @@ class MainWindow(QMainWindow):
                     pass
             
             self.session_manager.clear_session()
+            # Emit signal to notify main that logout was requested
+            self.logout_requested.emit()
             self.close()
     
     def show_about(self):
         """Show about dialog"""
         QMessageBox.about(
             self,
-            "About",
-            "Sensor Management System\n\n"
-            "Desktop Application\n"
-            "Version 1.0.0\n\n"
-            "A desktop application for managing climate sensors."
+            "Acerca de",
+            "Sistema de Gestión de Sensores\n\n"
+            "Aplicación de Escritorio\n"
+            "Versión 1.0.0\n\n"
+            "Una aplicación de escritorio para gestionar sensores climáticos."
         )
     
     def closeEvent(self, event):

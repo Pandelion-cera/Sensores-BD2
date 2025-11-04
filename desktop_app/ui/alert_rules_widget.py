@@ -27,7 +27,7 @@ class AlertRuleDialog(QDialog):
     def __init__(self, parent=None, rule: Optional[AlertRule] = None):
         super().__init__(parent)
         self.rule = rule
-        self.setWindowTitle("Edit Alert Rule" if rule else "Create Alert Rule")
+        self.setWindowTitle("Editar Regla de Alerta" if rule else "Crear Regla de Alerta")
         self.setMinimumWidth(600)
         self.setMinimumHeight(700)
         self.init_ui()
@@ -40,31 +40,31 @@ class AlertRuleDialog(QDialog):
         layout.setSpacing(10)
         
         # Name
-        layout.addWidget(QLabel("Name:"))
+        layout.addWidget(QLabel("Nombre:"))
         self.name_edit = QLineEdit()
         layout.addWidget(self.name_edit)
         
         # Description
-        layout.addWidget(QLabel("Description:"))
+        layout.addWidget(QLabel("Descripción:"))
         self.desc_edit = QTextEdit()
         self.desc_edit.setMaximumHeight(80)
         layout.addWidget(self.desc_edit)
         
         # Temperature conditions
-        temp_group = QGroupBox("Temperature Conditions")
+        temp_group = QGroupBox("Condiciones de Temperatura")
         temp_layout = QVBoxLayout()
         
         temp_row1 = QHBoxLayout()
-        temp_row1.addWidget(QLabel("Min Temperature:"))
+        temp_row1.addWidget(QLabel("Temperatura Mínima:"))
         self.temp_min_spin = QDoubleSpinBox()
         self.temp_min_spin.setRange(-100, 100)
-        self.temp_min_spin.setSpecialValueText("Not set")
+        self.temp_min_spin.setSpecialValueText("No establecido")
         self.temp_min_spin.setValue(-1000)  # Special value for "not set"
         temp_row1.addWidget(self.temp_min_spin)
-        temp_row1.addWidget(QLabel("Max Temperature:"))
+        temp_row1.addWidget(QLabel("Temperatura Máxima:"))
         self.temp_max_spin = QDoubleSpinBox()
         self.temp_max_spin.setRange(-100, 100)
-        self.temp_max_spin.setSpecialValueText("Not set")
+        self.temp_max_spin.setSpecialValueText("No establecido")
         self.temp_max_spin.setValue(-1000)
         temp_row1.addWidget(self.temp_max_spin)
         temp_layout.addLayout(temp_row1)
@@ -73,20 +73,20 @@ class AlertRuleDialog(QDialog):
         layout.addWidget(temp_group)
         
         # Humidity conditions
-        hum_group = QGroupBox("Humidity Conditions")
+        hum_group = QGroupBox("Condiciones de Humedad")
         hum_layout = QVBoxLayout()
         
         hum_row1 = QHBoxLayout()
-        hum_row1.addWidget(QLabel("Min Humidity:"))
+        hum_row1.addWidget(QLabel("Humedad Mínima:"))
         self.hum_min_spin = QDoubleSpinBox()
         self.hum_min_spin.setRange(0, 100)
-        self.hum_min_spin.setSpecialValueText("Not set")
+        self.hum_min_spin.setSpecialValueText("No establecido")
         self.hum_min_spin.setValue(-1)  # Special value for "not set"
         hum_row1.addWidget(self.hum_min_spin)
-        hum_row1.addWidget(QLabel("Max Humidity:"))
+        hum_row1.addWidget(QLabel("Humedad Máxima:"))
         self.hum_max_spin = QDoubleSpinBox()
         self.hum_max_spin.setRange(0, 100)
-        self.hum_max_spin.setSpecialValueText("Not set")
+        self.hum_max_spin.setSpecialValueText("No establecido")
         self.hum_max_spin.setValue(-1)
         hum_row1.addWidget(self.hum_max_spin)
         hum_layout.addLayout(hum_row1)
@@ -95,25 +95,25 @@ class AlertRuleDialog(QDialog):
         layout.addWidget(hum_group)
         
         # Location
-        location_group = QGroupBox("Location")
+        location_group = QGroupBox("Ubicación")
         location_layout = QVBoxLayout()
         
-        location_layout.addWidget(QLabel("Scope:"))
+        location_layout.addWidget(QLabel("Ámbito:"))
         self.scope_combo = QComboBox()
         self.scope_combo.addItems(["ciudad", "region", "pais"])
         self.scope_combo.currentTextChanged.connect(self.on_scope_changed)
         location_layout.addWidget(self.scope_combo)
         
-        location_layout.addWidget(QLabel("Country:"))
+        location_layout.addWidget(QLabel("País:"))
         self.country_edit = QLineEdit()
         location_layout.addWidget(self.country_edit)
         
-        self.city_label = QLabel("City:")
+        self.city_label = QLabel("Ciudad:")
         self.city_edit = QLineEdit()
         location_layout.addWidget(self.city_label)
         location_layout.addWidget(self.city_edit)
         
-        self.region_label = QLabel("Region:")
+        self.region_label = QLabel("Región:")
         self.region_edit = QLineEdit()
         location_layout.addWidget(self.region_label)
         location_layout.addWidget(self.region_edit)
@@ -122,17 +122,17 @@ class AlertRuleDialog(QDialog):
         layout.addWidget(location_group)
         
         # Date range
-        date_group = QGroupBox("Valid Period (Optional)")
+        date_group = QGroupBox("Rango de Tiempo")
         date_layout = QVBoxLayout()
         
         date_row1 = QHBoxLayout()
-        date_row1.addWidget(QLabel("Start Date (Optional):"))
+        date_row1.addWidget(QLabel("Fecha Inicio (Opcional):"))
         self.start_date = QDateEdit()
         self.start_date.setCalendarPopup(True)
         self.start_date.setDate(QDate.currentDate())
         date_row1.addWidget(self.start_date)
         
-        date_row1.addWidget(QLabel("End Date (Optional):"))
+        date_row1.addWidget(QLabel("Fecha Fin (Opcional):"))
         self.end_date = QDateEdit()
         self.end_date.setCalendarPopup(True)
         self.end_date.setDate(QDate.currentDate())
@@ -143,16 +143,16 @@ class AlertRuleDialog(QDialog):
         layout.addWidget(date_group)
         
         # Status and Priority
-        meta_group = QGroupBox("Metadata")
+        meta_group = QGroupBox("Prioridad")
         meta_layout = QVBoxLayout()
         
         meta_row1 = QHBoxLayout()
-        meta_row1.addWidget(QLabel("Status:"))
+        meta_row1.addWidget(QLabel("Estado:"))
         self.status_combo = QComboBox()
         self.status_combo.addItems(["activa", "inactiva"])
         meta_row1.addWidget(self.status_combo)
         
-        meta_row1.addWidget(QLabel("Priority (1-5):"))
+        meta_row1.addWidget(QLabel("Prioridad (1-5):"))
         self.priority_spin = QSpinBox()
         self.priority_spin.setRange(1, 5)
         self.priority_spin.setValue(1)
@@ -164,9 +164,9 @@ class AlertRuleDialog(QDialog):
         
         # Buttons
         btn_layout = QHBoxLayout()
-        save_btn = QPushButton("Save")
+        save_btn = QPushButton("Guardar")
         save_btn.clicked.connect(self.accept)
-        cancel_btn = QPushButton("Cancel")
+        cancel_btn = QPushButton("Cancelar")
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(cancel_btn)
@@ -311,35 +311,35 @@ class AlertRulesWidget(QWidget):
         
         # Title and actions
         header_layout = QHBoxLayout()
-        title = QLabel("Alert Rules")
+        title = QLabel("Reglas de Alerta")
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         header_layout.addWidget(title)
         header_layout.addStretch()
         
         # Filters
-        filter_group = QGroupBox("Filters")
+        filter_group = QGroupBox("Filtros")
         filter_layout = QHBoxLayout()
         
-        filter_layout.addWidget(QLabel("Country:"))
+        filter_layout.addWidget(QLabel("País:"))
         self.country_filter = QLineEdit()
-        self.country_filter.setPlaceholderText("Filter by country")
+        self.country_filter.setPlaceholderText("Filtrar por país")
         filter_layout.addWidget(self.country_filter)
         
-        filter_layout.addWidget(QLabel("City:"))
+        filter_layout.addWidget(QLabel("Ciudad:"))
         self.city_filter = QLineEdit()
-        self.city_filter.setPlaceholderText("Filter by city")
+        self.city_filter.setPlaceholderText("Filtrar por ciudad")
         filter_layout.addWidget(self.city_filter)
         
-        filter_layout.addWidget(QLabel("Status:"))
+        filter_layout.addWidget(QLabel("Estado:"))
         self.status_filter = QComboBox()
         self.status_filter.addItems(["", "activa", "inactiva"])
         filter_layout.addWidget(self.status_filter)
         
-        filter_btn = QPushButton("Filter")
+        filter_btn = QPushButton("Filtrar")
         filter_btn.clicked.connect(self.load_rules)
         filter_layout.addWidget(filter_btn)
         
-        clear_btn = QPushButton("Clear")
+        clear_btn = QPushButton("Limpiar")
         clear_btn.clicked.connect(self.clear_filters)
         filter_layout.addWidget(clear_btn)
         
@@ -348,13 +348,13 @@ class AlertRulesWidget(QWidget):
         
         # Buttons
         btn_layout = QHBoxLayout()
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = QPushButton("Actualizar")
         refresh_btn.clicked.connect(self.load_rules)
         btn_layout.addWidget(refresh_btn)
         
         user_role = self.session_manager.get_user_role()
         if user_role in ["administrador", "tecnico"]:
-            create_btn = QPushButton("Create Alert Rule")
+            create_btn = QPushButton("Crear Regla")
             create_btn.clicked.connect(self.create_rule)
             btn_layout.addWidget(create_btn)
         
@@ -365,8 +365,8 @@ class AlertRulesWidget(QWidget):
         self.table = QTableWidget()
         self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels([
-            "ID", "Name", "Description", "Temp Range", "Humidity Range", 
-            "Location", "Status", "Priority", "Created", "Actions"
+            "ID", "Nombre", "Descripción", "Rango Temp", "Rango Humedad", 
+            "Ubicación", "Estado", "Prioridad", "Creado", "Acciones"
         ])
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -443,20 +443,20 @@ class AlertRulesWidget(QWidget):
                 
                 user_role = self.session_manager.get_user_role()
                 if user_role in ["administrador", "tecnico"]:
-                    edit_btn = QPushButton("Edit")
+                    edit_btn = QPushButton("Editar")
                     edit_btn.clicked.connect(lambda checked, r=rule: self.edit_rule(r))
                     actions_layout.addWidget(edit_btn)
                     
-                    delete_btn = QPushButton("Delete")
+                    delete_btn = QPushButton("Eliminar")
                     delete_btn.clicked.connect(lambda checked, r=rule: self.delete_rule(r))
                     actions_layout.addWidget(delete_btn)
                     
                     if rule.estado == AlertRuleStatus.ACTIVE:
-                        deactivate_btn = QPushButton("Deactivate")
+                        deactivate_btn = QPushButton("Desactivar")
                         deactivate_btn.clicked.connect(lambda checked, r=rule: self.deactivate_rule(r))
                         actions_layout.addWidget(deactivate_btn)
                     else:
-                        activate_btn = QPushButton("Activate")
+                        activate_btn = QPushButton("Activar")
                         activate_btn.clicked.connect(lambda checked, r=rule: self.activate_rule(r))
                         actions_layout.addWidget(activate_btn)
                 
@@ -464,7 +464,7 @@ class AlertRulesWidget(QWidget):
                 self.table.setCellWidget(row, 9, actions_widget)
                 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load alert rules: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al cargar reglas de alerta: {str(e)}")
     
     def create_rule(self):
         dialog = AlertRuleDialog(self)
@@ -487,10 +487,10 @@ class AlertRulesWidget(QWidget):
                     user_id = self.session_manager.get_user_id()
                     user_email = f"user_{user_id}" if user_id else "unknown"
                 rule_service.create_rule(rule_data, user_email)
-                QMessageBox.information(self, "Success", "Alert rule created successfully")
+                QMessageBox.information(self, "Éxito", "Regla de alerta creada exitosamente")
                 self.load_rules()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to create alert rule: {str(e)}")
+                QMessageBox.critical(self, "Error", f"Error al crear regla de alerta: {str(e)}")
     
     def edit_rule(self, rule: AlertRule):
         dialog = AlertRuleDialog(self, rule)
@@ -507,16 +507,16 @@ class AlertRulesWidget(QWidget):
                 rule_service = AlertRuleService(rule_repo, alert_repo)
                 
                 rule_service.update_rule(rule.id, rule_update)
-                QMessageBox.information(self, "Success", "Alert rule updated successfully")
+                QMessageBox.information(self, "Éxito", "Regla de alerta actualizada exitosamente")
                 self.load_rules()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to update alert rule: {str(e)}")
+                QMessageBox.critical(self, "Error", f"Error al actualizar regla de alerta: {str(e)}")
     
     def delete_rule(self, rule: AlertRule):
         reply = QMessageBox.question(
             self,
-            "Confirm Delete",
-            f"Are you sure you want to delete alert rule '{rule.nombre}'?",
+            "Confirmar Eliminación",
+            f"¿Está seguro que desea eliminar la regla de alerta '{rule.nombre}'?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
@@ -530,10 +530,10 @@ class AlertRulesWidget(QWidget):
                 rule_service = AlertRuleService(rule_repo, alert_repo)
                 
                 rule_service.delete_rule(rule.id)
-                QMessageBox.information(self, "Success", "Alert rule deleted successfully")
+                QMessageBox.information(self, "Éxito", "Regla de alerta eliminada exitosamente")
                 self.load_rules()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to delete alert rule: {str(e)}")
+                QMessageBox.critical(self, "Error", f"Error al eliminar regla de alerta: {str(e)}")
     
     def activate_rule(self, rule: AlertRule):
         try:
@@ -545,10 +545,10 @@ class AlertRulesWidget(QWidget):
             rule_service = AlertRuleService(rule_repo, alert_repo)
             
             rule_service.activate_rule(rule.id)
-            QMessageBox.information(self, "Success", "Alert rule activated successfully")
+            QMessageBox.information(self, "Éxito", "Regla de alerta activada exitosamente")
             self.load_rules()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to activate alert rule: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al activar regla de alerta: {str(e)}")
     
     def deactivate_rule(self, rule: AlertRule):
         try:
@@ -560,7 +560,7 @@ class AlertRulesWidget(QWidget):
             rule_service = AlertRuleService(rule_repo, alert_repo)
             
             rule_service.deactivate_rule(rule.id)
-            QMessageBox.information(self, "Success", "Alert rule deactivated successfully")
+            QMessageBox.information(self, "Éxito", "Regla de alerta desactivada exitosamente")
             self.load_rules()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to deactivate alert rule: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al desactivar regla de alerta: {str(e)}")

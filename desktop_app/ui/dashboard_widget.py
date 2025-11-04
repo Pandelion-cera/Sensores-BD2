@@ -30,21 +30,21 @@ class DashboardWidget(QWidget):
         
         # Welcome label
         user = self.session_manager.get_user()
-        welcome_text = "Welcome!"
+        welcome_text = "¡Bienvenido/a!"
         if user:
-            welcome_text = f"Welcome, {user.get('nombre_completo', 'User')}!"
+            welcome_text = f"¡Bienvenido/a, {user.get('nombre_completo', 'Usuario')}!"
         
         welcome = QLabel(welcome_text)
         welcome.setStyleSheet("font-size: 20px; font-weight: bold; margin-bottom: 10px;")
         layout.addWidget(welcome)
         
         # Stats group
-        stats_group = QGroupBox("Statistics")
+        stats_group = QGroupBox("Estadísticas")
         stats_layout = QHBoxLayout()
         
-        self.total_sensors_label = QLabel("Total Sensors: -")
-        self.active_sensors_label = QLabel("Active Sensors: -")
-        self.active_alerts_label = QLabel("Active Alerts: -")
+        self.total_sensors_label = QLabel("Sensores Totales: -")
+        self.active_sensors_label = QLabel("Sensores Activos: -")
+        self.active_alerts_label = QLabel("Alertas Activas: -")
         
         stats_layout.addWidget(self.total_sensors_label)
         stats_layout.addWidget(self.active_sensors_label)
@@ -55,7 +55,7 @@ class DashboardWidget(QWidget):
         layout.addWidget(stats_group)
         
         # Refresh button
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = QPushButton("Actualizar")
         refresh_btn.clicked.connect(self.refresh)
         layout.addWidget(refresh_btn)
         
@@ -75,12 +75,12 @@ class DashboardWidget(QWidget):
             all_sensors = sensor_repo.get_all(limit=1000)
             active_sensors = [s for s in all_sensors if s.estado == "activo"]
             
-            self.total_sensors_label.setText(f"Total Sensors: {len(all_sensors)}")
-            self.active_sensors_label.setText(f"Active Sensors: {len(active_sensors)}")
+            self.total_sensors_label.setText(f"Sensores Totales: {len(all_sensors)}")
+            self.active_sensors_label.setText(f"Sensores Activos: {len(active_sensors)}")
             
             # Get alert stats
             active_alerts = alert_repo.get_active_alerts(limit=1000)
-            self.active_alerts_label.setText(f"Active Alerts: {len(active_alerts)}")
+            self.active_alerts_label.setText(f"Alertas Activas: {len(active_alerts)}")
             
         except Exception as e:
             self.total_sensors_label.setText(f"Error: {str(e)}")

@@ -34,7 +34,7 @@ class ProcessesWidget(QWidget):
         layout.setContentsMargins(20, 20, 20, 20)
         
         # Title
-        title = QLabel("Processes")
+        title = QLabel("Procesos")
         title.setStyleSheet("font-size: 18px; font-weight: bold;")
         layout.addWidget(title)
         
@@ -47,14 +47,14 @@ class ProcessesWidget(QWidget):
         self.processes_table = QTableWidget()
         self.processes_table.setColumnCount(5)
         self.processes_table.setHorizontalHeaderLabels([
-            "ID", "Name", "Type", "Description", "Cost"
+            "ID", "Nombre", "Tipo", "Descripción", "Costo"
         ])
         self.processes_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.processes_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.processes_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         processes_layout.addWidget(self.processes_table)
         processes_container.setLayout(processes_layout)
-        self.tabs.addTab(processes_container, "Available Processes")
+        self.tabs.addTab(processes_container, "Procesos Disponibles")
         
         # My requests tab
         requests_container = QWidget()
@@ -62,30 +62,30 @@ class ProcessesWidget(QWidget):
         self.requests_table = QTableWidget()
         self.requests_table.setColumnCount(5)
         self.requests_table.setHorizontalHeaderLabels([
-            "ID", "Process ID", "Status", "Request Date", "Parameters"
+            "ID", "ID Proceso", "Estado", "Fecha de Solicitud", "Parámetros"
         ])
         self.requests_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.requests_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.requests_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         requests_layout.addWidget(self.requests_table)
         requests_container.setLayout(requests_layout)
-        self.tabs.addTab(requests_container, "My Requests")
+        self.tabs.addTab(requests_container, "Mis Solicitudes")
         
         layout.addWidget(self.tabs)
         
         # Buttons
         btn_layout = QHBoxLayout()
-        request_btn = QPushButton("Request Selected Process")
+        request_btn = QPushButton("Solicitar Proceso Seleccionado")
         request_btn.clicked.connect(self.request_process)
         btn_layout.addWidget(request_btn)
         
         user_role = self.session_manager.get_user_role()
         if user_role in ["administrador", "tecnico"]:
-            execute_btn = QPushButton("Execute Selected Request")
+            execute_btn = QPushButton("Ejecutar Solicitud Seleccionada")
             execute_btn.clicked.connect(self.execute_selected_request)
             btn_layout.addWidget(execute_btn)
         
-        refresh_btn = QPushButton("Refresh")
+        refresh_btn = QPushButton("Actualizar")
         refresh_btn.clicked.connect(self.load_processes)
         btn_layout.addWidget(refresh_btn)
         btn_layout.addStretch()
@@ -138,20 +138,20 @@ class ProcessesWidget(QWidget):
                 self.requests_table.setRowCount(0)
                 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load processes: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al cargar procesos: {str(e)}")
     
     def request_process(self):
         current_row = self.processes_table.currentRow()
         if current_row < 0:
-            QMessageBox.warning(self, "Selection Error", "Please select a process to request")
+            QMessageBox.warning(self, "Error de Selección", "Por favor seleccione un proceso para solicitar")
             return
         
         process_id = self.processes_table.item(current_row, 0).text()
         
         reply = QMessageBox.question(
             self,
-            "Confirm Request",
-            f"Request execution of process: {self.processes_table.item(current_row, 1).text()}?",
+            "Confirmar Solicitud",
+            f"¿Solicitar ejecución del proceso: {self.processes_table.item(current_row, 1).text()}?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
@@ -159,7 +159,7 @@ class ProcessesWidget(QWidget):
             try:
                 user_id = self.session_manager.get_user_id()
                 if not user_id:
-                    QMessageBox.warning(self, "Error", "User not logged in")
+                    QMessageBox.warning(self, "Error", "Usuario no conectado")
                     return
                 
                 mongo_db = db_manager.get_mongo_db()
@@ -176,24 +176,24 @@ class ProcessesWidget(QWidget):
                     parametros={}
                 )
                 process_service.request_process(user_id, request_data)
-                QMessageBox.information(self, "Success", "Process request submitted successfully")
+                QMessageBox.information(self, "Éxito", "Solicitud de proceso enviada exitosamente")
                 self.load_processes()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to request process: {str(e)}")
+                QMessageBox.critical(self, "Error", f"Error al solicitar proceso: {str(e)}")
     
     def execute_selected_request(self):
         """Execute a selected process request (admin/tecnico only)"""
         current_row = self.requests_table.currentRow()
         if current_row < 0:
-            QMessageBox.warning(self, "Selection Error", "Please select a process request to execute")
+            QMessageBox.warning(self, "Error de Selección", "Por favor seleccione una solicitud de proceso para ejecutar")
             return
         
         request_id = self.requests_table.item(current_row, 0).text()
         
         reply = QMessageBox.question(
             self,
-            "Confirm Execution",
-            f"Execute process request {request_id}?",
+            "Confirmar Ejecución",
+            f"¿Ejecutar solicitud de proceso {request_id}?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
@@ -211,13 +211,13 @@ class ProcessesWidget(QWidget):
                 execution = process_service.execute_process(request_id)
                 
                 if execution.estado.value == "completado":
-                    QMessageBox.information(self, "Success", f"Process executed successfully!\nExecution ID: {execution.id}")
+                    QMessageBox.information(self, "Éxito", f"Proceso ejecutado exitosamente!\nID de Ejecución: {execution.id}")
                 elif execution.estado.value == "fallido":
-                    error_msg = execution.error_message or "Unknown error"
-                    QMessageBox.warning(self, "Execution Failed", f"Process execution failed:\n{error_msg}")
+                    error_msg = execution.error_message or "Error desconocido"
+                    QMessageBox.warning(self, "Ejecución Fallida", f"La ejecución del proceso falló:\n{error_msg}")
                 else:
-                    QMessageBox.information(self, "Info", f"Process execution status: {execution.estado.value}")
+                    QMessageBox.information(self, "Información", f"Estado de ejecución del proceso: {execution.estado.value}")
                 
                 self.load_processes()
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Failed to execute process: {str(e)}")
+                QMessageBox.critical(self, "Error", f"Error al ejecutar proceso: {str(e)}")
