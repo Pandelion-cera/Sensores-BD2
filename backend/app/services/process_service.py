@@ -4,6 +4,7 @@ from datetime import datetime
 from app.repositories.process_repository import ProcessRepository
 from app.repositories.measurement_repository import MeasurementRepository
 from app.repositories.sensor_repository import SensorRepository
+from app.repositories.user_repository import UserRepository
 from app.models.process_models import (
     Process, ProcessCreate, ProcessRequest, ProcessRequestCreate,
     Execution, ExecutionCreate, ProcessStatus, ProcessType
@@ -15,11 +16,13 @@ class ProcessService:
         self,
         process_repo: ProcessRepository,
         measurement_repo: MeasurementRepository,
-        sensor_repo: SensorRepository
+        sensor_repo: SensorRepository,
+        user_repo: Optional[UserRepository] = None
     ):
         self.process_repo = process_repo
         self.measurement_repo = measurement_repo
         self.sensor_repo = sensor_repo
+        self.user_repo = user_repo
     
     # Process Definition Management
     def create_process(self, process_data: ProcessCreate) -> Process:
@@ -53,6 +56,44 @@ class ProcessService:
     def get_user_requests(self, user_id: str, skip: int = 0, limit: int = 100) -> List[ProcessRequest]:
         """Get all requests for a user"""
         return self.process_repo.get_user_requests(user_id, skip, limit)
+    
+    def get_all_requests(
+        self, 
+        status: Optional[ProcessStatus] = None, 
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """Get all requests with optional status filter, enriched with user and process info"""
+        requests = self.process_repo.get_all_requests(status, skip, limit)
+        
+        # Enrich requests with user and process information
+        enriched_requests = []
+        for request in requests:
+            request_dict = request.model_dump()
+            
+            # Get user information
+            if self.user_repo:
+                user = self.user_repo.get_by_id(request.user_id)
+                if user:
+                    request_dict["user"] = {
+                        "id": user.id,
+                        "nombre_completo": user.nombre_completo,
+                        "email": user.email
+                    }
+            
+            # Get process information
+            process = self.process_repo.get_process(request.process_id)
+            if process:
+                request_dict["process"] = {
+                    "id": process.id,
+                    "nombre": process.nombre,
+                    "descripcion": process.descripcion,
+                    "costo": process.costo
+                }
+            
+            enriched_requests.append(request_dict)
+        
+        return enriched_requests
     
     def get_request(self, request_id: str) -> Optional[ProcessRequest]:
         """Get process request by ID"""

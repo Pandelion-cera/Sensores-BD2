@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import (
     QHeaderView, QAbstractItemView
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 from datetime import datetime
 
 from desktop_app.core.database import db_manager
@@ -111,10 +112,12 @@ class InvoicesWidget(QWidget):
                 
                 # Color code by status
                 if invoice.estado == InvoiceStatus.PENDING:
+                    yellow_color = QColor(Qt.GlobalColor.yellow)
+                    light_yellow = yellow_color.lighter(220)
                     for col in range(6):
                         item = self.table.item(row, col)
                         if item:
-                            item.setBackground(Qt.GlobalColor.yellow.lighter(220))
+                            item.setBackground(light_yellow)
             
             # Load account
             account = invoice_service.get_user_account(user_id)

@@ -18,7 +18,13 @@ class InvoiceService:
         self.invoice_repo = invoice_repo
         self.process_repo = process_repo
     
-    def create_invoice_for_user(self, user_id: str, process_ids: List[str]) -> Invoice:
+    def create_invoice_for_user(
+        self, 
+        user_id: str, 
+        process_ids: List[str],
+        request_id: Optional[str] = None,
+        execution_id: Optional[str] = None
+    ) -> Invoice:
         """Create an invoice for a user based on executed processes"""
         items = []
         
@@ -30,7 +36,9 @@ class InvoiceService:
                     process_name=process.nombre,
                     cantidad=1,
                     precio_unitario=process.costo,
-                    subtotal=process.costo
+                    subtotal=process.costo,
+                    request_id=request_id,
+                    execution_id=execution_id
                 )
                 items.append(item)
         

@@ -17,6 +17,8 @@ class InvoiceItem(BaseModel):
     cantidad: int = 1
     precio_unitario: float
     subtotal: float
+    request_id: Optional[str] = None  # Link to process request
+    execution_id: Optional[str] = None  # Link to execution record
 
 
 class Invoice(BaseModel):

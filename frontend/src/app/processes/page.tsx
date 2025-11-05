@@ -14,6 +14,7 @@ export default function ProcessesPage() {
   const router = useRouter()
   const [processes, setProcesses] = useState<any[]>([])
   const [requests, setRequests] = useState<any[]>([])
+  const [allRequests, setAllRequests] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
   
@@ -26,6 +27,7 @@ export default function ProcessesPage() {
   const [execution, setExecution] = useState<any>(null)
   const [formParams, setFormParams] = useState<{ [key: string]: string }>({})
   const [submitting, setSubmitting] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<string>('pendiente')
 
   useEffect(() => {
     loadData()
@@ -45,6 +47,12 @@ export default function ProcessesPage() {
         // Load user's requests
         const requestsData = await api.getUserProcessRequests(userData.id)
         setRequests(requestsData)
+
+        // Load all requests if técnico or admin
+        if (userData.role === 'tecnico' || userData.role === 'administrador') {
+          const allRequestsData = await api.getAllProcessRequests({ status: statusFilter })
+          setAllRequests(allRequestsData)
+        }
       }
     } catch (error) {
       console.error('Error loading data:', error)
@@ -52,6 +60,22 @@ export default function ProcessesPage() {
       setLoading(false)
     }
   }
+
+  const loadAllRequests = async () => {
+    try {
+      const allRequestsData = await api.getAllProcessRequests({ status: statusFilter })
+      setAllRequests(allRequestsData)
+    } catch (error) {
+      console.error('Error loading all requests:', error)
+    }
+  }
+
+  useEffect(() => {
+    if (user && (user.role === 'tecnico' || user.role === 'administrador')) {
+      loadAllRequests()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter])
 
   const handleRequestClick = (process: any) => {
     setSelectedProcess(process)
@@ -106,6 +130,9 @@ export default function ProcessesPage() {
       setSelectedRequest(request)
       setResultModalOpen(true)
       loadData()
+      if (user && (user.role === 'tecnico' || user.role === 'administrador')) {
+        loadAllRequests()
+      }
     } catch (error: any) {
       const errorMessage = error?.response?.data?.detail || error?.message || 'Error al ejecutar proceso'
       alert(errorMessage)
@@ -204,9 +231,89 @@ export default function ProcessesPage() {
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-900">Procesos y Reportes</h2>
           <p className="mt-1 text-sm text-gray-600">
-            Ejecuta reportes y consultas sobre los datos de sensores
+            {isAdminOrTecnico 
+              ? 'Gestiona solicitudes de procesos y ejecuta reportes'
+              : 'Solicita ejecución de reportes y consultas sobre los datos de sensores'
+            }
           </p>
         </div>
+
+        {/* All Requests for Técnicos/Admins */}
+        {isAdminOrTecnico && (
+          <Card className="mb-8">
+            <CardHeader>
+              <CardTitle>Solicitudes de Procesos</CardTitle>
+              <CardDescription>Todas las solicitudes de procesos de usuarios</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="mb-4">
+                <Label htmlFor="statusFilter" className="mr-2">Filtrar por estado:</Label>
+                <select
+                  id="statusFilter"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-3 py-1 border rounded-md"
+                >
+                  <option value="">Todos</option>
+                  <option value="pendiente">Pendiente</option>
+                  <option value="en_progreso">En Progreso</option>
+                  <option value="completado">Completado</option>
+                  <option value="fallido">Fallido</option>
+                </select>
+              </div>
+              {loading ? (
+                <p className="text-gray-500">Cargando solicitudes...</p>
+              ) : allRequests.length === 0 ? (
+                <p className="text-gray-500">No hay solicitudes {statusFilter ? `con estado ${statusFilter}` : ''}</p>
+              ) : (
+                <div className="space-y-3">
+                  {allRequests.map((request: any) => (
+                    <div key={request.id} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex-1">
+                        <div className="font-medium">
+                          {request.process?.nombre || `Proceso ID: ${request.process_id}`}
+                        </div>
+                        <div className="text-sm text-gray-600 mt-1">
+                          {request.process?.descripcion || 'Sin descripción'}
+                        </div>
+                        <div className="text-sm text-gray-500 mt-2">
+                          <div>Usuario: {request.user?.nombre_completo || request.user_id}</div>
+                          <div>Email: {request.user?.email || 'N/A'}</div>
+                          <div>Solicitado: {formatDate(request.fecha_solicitud)}</div>
+                          {request.parametros && Object.keys(request.parametros).length > 0 && (
+                            <div className="mt-1">
+                              <span className="font-medium">Parámetros: </span>
+                              {Object.entries(request.parametros).map(([key, value]) => (
+                                <span key={key} className="text-xs bg-gray-100 px-2 py-1 rounded mr-1">
+                                  {key}: {String(value)}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(request.estado)}`}>
+                          {request.estado}
+                        </span>
+                        {request.estado === 'pendiente' && (
+                          <Button size="sm" onClick={() => handleExecute(request)} disabled={submitting}>
+                            {submitting ? 'Ejecutando...' : 'Ejecutar'}
+                          </Button>
+                        )}
+                        {request.estado === 'completado' && (
+                          <Button size="sm" onClick={() => handleViewResult(request)}>
+                            Ver Resultado
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Available Processes */}
         <Card className="mb-8">
@@ -269,11 +376,6 @@ export default function ProcessesPage() {
                       {request.estado === 'completado' && (
                         <Button size="sm" onClick={() => handleViewResult(request)}>
                           Ver Resultado
-                        </Button>
-                      )}
-                      {request.estado === 'pendiente' && isAdminOrTecnico && (
-                        <Button size="sm" onClick={() => handleExecute(request)} disabled={submitting}>
-                          Ejecutar
                         </Button>
                       )}
                     </div>

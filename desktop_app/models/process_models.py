@@ -93,4 +93,5 @@ class ExecutionCreate(BaseModel):
     resultado: Optional[Dict[str, Any]] = None
     estado: ProcessStatus
     error_message: Optional[str] = None
+    fecha_ejecucion: Optional[datetime] = None
 

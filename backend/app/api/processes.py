@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from app.models.process_models import (
-    Process, ProcessCreate, ProcessRequest, ProcessRequestCreate, Execution
+    Process, ProcessCreate, ProcessRequest, ProcessRequestCreate, Execution, ProcessStatus
 )
 from app.services.process_service import ProcessService
 from app.core.security import get_current_user_data
@@ -10,6 +10,7 @@ from app.core.database import get_mongo_db, get_neo4j_driver, get_cassandra_sess
 from app.repositories.process_repository import ProcessRepository
 from app.repositories.measurement_repository import MeasurementRepository
 from app.repositories.sensor_repository import SensorRepository
+from app.repositories.user_repository import UserRepository
 from app.core.config import settings
 
 router = APIRouter()
@@ -23,7 +24,8 @@ def get_process_service(
     process_repo = ProcessRepository(mongo_db, neo4j_driver)
     measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
     sensor_repo = SensorRepository(mongo_db)
-    return ProcessService(process_repo, measurement_repo, sensor_repo)
+    user_repo = UserRepository(mongo_db, neo4j_driver)
+    return ProcessService(process_repo, measurement_repo, sensor_repo, user_repo)
 
 
 @router.post("", response_model=Process, status_code=status.HTTP_201_CREATED)
@@ -73,6 +75,22 @@ def request_process(
         return process_service.request_process(current_user["user_id"], request_data)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/requests", response_model=List[Dict[str, Any]])
+def get_all_requests(
+    status: Optional[ProcessStatus] = Query(None, description="Filter by status"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    current_user: Dict[str, Any] = Depends(get_current_user_data),
+    process_service: ProcessService = Depends(get_process_service)
+):
+    """Get all process requests (técnico/admin only)"""
+    # Only técnicos and admins can view all requests
+    if current_user.get("role") not in ["administrador", "tecnico"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+    
+    return process_service.get_all_requests(status, skip, limit)
 
 
 @router.get("/requests/user/{user_id}", response_model=List[ProcessRequest])

@@ -4,19 +4,453 @@ Processes widget for viewing and managing process requests
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QMessageBox, QTabWidget,
-    QHeaderView, QAbstractItemView
+    QHeaderView, QAbstractItemView, QComboBox, QDialog,
+    QLineEdit, QDateTimeEdit, QTextEdit, QGroupBox, QScrollArea
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QDateTime
 from datetime import datetime
+import json
 
 from desktop_app.core.database import db_manager
 from desktop_app.repositories.process_repository import ProcessRepository
 from desktop_app.repositories.measurement_repository import MeasurementRepository
 from desktop_app.repositories.sensor_repository import SensorRepository
+from desktop_app.repositories.user_repository import UserRepository
+from desktop_app.repositories.invoice_repository import InvoiceRepository
 from desktop_app.services.process_service import ProcessService
 from desktop_app.utils.session_manager import SessionManager
 from desktop_app.core.config import settings
-from desktop_app.models.process_models import ProcessRequestCreate
+from desktop_app.models.process_models import ProcessRequestCreate, ProcessStatus, Process, Execution
+
+
+class ProcessRequestDialog(QDialog):
+    """Dialog for collecting process request parameters"""
+    
+    def __init__(self, process: Process, parent=None):
+        super().__init__(parent)
+        self.process = process
+        self.setWindowTitle(f"Solicitar Proceso: {process.nombre}")
+        self.setMinimumWidth(450)
+        self.parametros = {}
+        self.init_ui()
+    
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        
+        # Process description
+        desc_label = QLabel(self.process.descripcion or "")
+        desc_label.setWordWrap(True)
+        desc_label.setStyleSheet("color: gray; padding: 5px;")
+        layout.addWidget(desc_label)
+        
+        # País (Country)
+        layout.addWidget(QLabel("País *:"))
+        self.pais_edit = QLineEdit()
+        self.pais_edit.setPlaceholderText("Ej: Argentina")
+        layout.addWidget(self.pais_edit)
+        
+        # Ciudad (City)
+        layout.addWidget(QLabel("Ciudad *:"))
+        self.ciudad_edit = QLineEdit()
+        self.ciudad_edit.setPlaceholderText("Ej: Buenos Aires")
+        layout.addWidget(self.ciudad_edit)
+        
+        # Fecha Inicio (Start Date)
+        layout.addWidget(QLabel("Fecha Inicio *:"))
+        self.fecha_inicio_edit = QDateTimeEdit()
+        self.fecha_inicio_edit.setCalendarPopup(True)
+        self.fecha_inicio_edit.setDateTime(QDateTime.currentDateTime().addDays(-30))
+        self.fecha_inicio_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
+        layout.addWidget(self.fecha_inicio_edit)
+        
+        # Fecha Fin (End Date)
+        layout.addWidget(QLabel("Fecha Fin *:"))
+        self.fecha_fin_edit = QDateTimeEdit()
+        self.fecha_fin_edit.setCalendarPopup(True)
+        self.fecha_fin_edit.setDateTime(QDateTime.currentDateTime())
+        self.fecha_fin_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
+        layout.addWidget(self.fecha_fin_edit)
+        
+        # Info label
+        info_label = QLabel("* Campos requeridos")
+        info_label.setStyleSheet("color: gray; font-size: 10px;")
+        layout.addWidget(info_label)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("Solicitar")
+        save_btn.clicked.connect(self.accept)
+        cancel_btn = QPushButton("Cancelar")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+        
+        self.setLayout(layout)
+    
+    def accept(self):
+        """Validate and accept the dialog"""
+        # Validate required fields
+        pais = self.pais_edit.text().strip()
+        ciudad = self.ciudad_edit.text().strip()
+        
+        if not pais:
+            QMessageBox.warning(self, "Error de Validación", "Por favor ingrese el país")
+            return
+        
+        if not ciudad:
+            QMessageBox.warning(self, "Error de Validación", "Por favor ingrese la ciudad")
+            return
+        
+        # Get dates
+        fecha_inicio = self.fecha_inicio_edit.dateTime().toPyDateTime()
+        fecha_fin = self.fecha_fin_edit.dateTime().toPyDateTime()
+        
+        if fecha_inicio >= fecha_fin:
+            QMessageBox.warning(self, "Error de Validación", "La fecha de inicio debe ser anterior a la fecha de fin")
+            return
+        
+        # Build parameters dict
+        self.parametros = {
+            "pais": pais,
+            "ciudad": ciudad,
+            "fecha_inicio": fecha_inicio.isoformat(),
+            "fecha_fin": fecha_fin.isoformat()
+        }
+        
+        super().accept()
+    
+    def get_parametros(self) -> dict:
+        """Get the collected parameters"""
+        return self.parametros
+
+
+class ProcessResultsDialog(QDialog):
+    """Dialog for displaying process execution results"""
+    
+    def __init__(self, execution: Execution, process_name: str = "", parent=None):
+        super().__init__(parent)
+        self.execution = execution
+        self.process_name = process_name
+        self.setWindowTitle(f"Resultados de Ejecución: {process_name}")
+        self.setMinimumSize(800, 600)
+        self.init_ui()
+    
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.setSpacing(10)
+        
+        # Execution info
+        info_group = QGroupBox("Información de Ejecución")
+        info_layout = QVBoxLayout()
+        
+        estado_label = QLabel(f"Estado: {self.execution.estado.value if self.execution.estado else 'N/A'}")
+        estado_label.setStyleSheet("font-weight: bold; font-size: 12px;")
+        info_layout.addWidget(estado_label)
+        
+        if self.execution.fecha_ejecucion:
+            fecha_str = ""
+            if isinstance(self.execution.fecha_ejecucion, datetime):
+                fecha_str = self.execution.fecha_ejecucion.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                fecha_str = str(self.execution.fecha_ejecucion)
+            fecha_label = QLabel(f"Fecha de Ejecución: {fecha_str}")
+            info_layout.addWidget(fecha_label)
+        
+        if self.execution.id:
+            id_label = QLabel(f"ID de Ejecución: {self.execution.id}")
+            info_layout.addWidget(id_label)
+        
+        info_group.setLayout(info_layout)
+        layout.addWidget(info_group)
+        
+        # Error message (if failed)
+        if self.execution.estado and self.execution.estado.value == "fallido":
+            error_group = QGroupBox("Error")
+            error_layout = QVBoxLayout()
+            error_text = QTextEdit()
+            error_text.setReadOnly(True)
+            error_text.setMaximumHeight(150)
+            error_text.setStyleSheet("background-color: #ffebee; color: #c62828;")
+            error_msg = self.execution.error_message or "Error desconocido"
+            error_text.setPlainText(error_msg)
+            error_layout.addWidget(error_text)
+            error_group.setLayout(error_layout)
+            layout.addWidget(error_group)
+        
+        # Results (if completed)
+        if self.execution.estado and self.execution.estado.value == "completado":
+            if self.execution.resultado:
+                results_group = QGroupBox("Resultados")
+                results_layout = QVBoxLayout()
+                
+                # Create scrollable area for results
+                scroll = QScrollArea()
+                scroll.setWidgetResizable(True)
+                scroll_content = QWidget()
+                scroll_layout = QVBoxLayout()
+                
+                resultado = self.execution.resultado
+                
+                # Format results based on type
+                if isinstance(resultado, dict):
+                    tipo = resultado.get("tipo", "")
+                    
+                    if tipo in ["reporte_max_min", "informe_promedio"]:
+                        # Report results
+                        self._format_report_results(resultado, scroll_layout)
+                    elif tipo == "consulta_online":
+                        # Online query results
+                        self._format_query_results(resultado, scroll_layout)
+                    else:
+                        # Generic JSON display
+                        self._format_generic_results(resultado, scroll_layout)
+                else:
+                    # Generic display
+                    result_text = QTextEdit()
+                    result_text.setReadOnly(True)
+                    result_text.setPlainText(str(resultado))
+                    scroll_layout.addWidget(result_text)
+                
+                scroll_content.setLayout(scroll_layout)
+                scroll.setWidget(scroll_content)
+                results_layout.addWidget(scroll)
+                results_group.setLayout(results_layout)
+                layout.addWidget(results_group)
+            else:
+                # No results available
+                no_results_group = QGroupBox("Resultados")
+                no_results_layout = QVBoxLayout()
+                no_results_label = QLabel("No hay resultados disponibles para esta ejecución.")
+                no_results_label.setStyleSheet("color: gray; padding: 10px;")
+                no_results_layout.addWidget(no_results_label)
+                no_results_group.setLayout(no_results_layout)
+                layout.addWidget(no_results_group)
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+        
+        self.setLayout(layout)
+    
+    def _format_report_results(self, resultado: dict, layout: QVBoxLayout):
+        """Format report results (max/min or average)"""
+        # Location info
+        if "pais" in resultado or "ciudad" in resultado:
+            location_label = QLabel(f"Ubicación: {resultado.get('ciudad', 'N/A')}, {resultado.get('pais', 'N/A')}")
+            location_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+            layout.addWidget(location_label)
+        
+        # Period info
+        if "periodo" in resultado:
+            periodo = resultado["periodo"]
+            periodo_label = QLabel(
+                f"Período: {periodo.get('inicio', 'N/A')} - {periodo.get('fin', 'N/A')}"
+            )
+            layout.addWidget(periodo_label)
+        
+        # Results table
+        if "resultados" in resultado:
+            resultados = resultado["resultados"]
+            if isinstance(resultados, dict) and resultados:
+                # Create table for statistics
+                table = QTableWidget()
+                table.setColumnCount(4)
+                table.setHorizontalHeaderLabels(["Métrica", "Temperatura", "Humedad", "Unidad"])
+                
+                row = 0
+                # Check if resultados has temperatura and humedad as direct keys (new format)
+                if "temperatura" in resultados and "humedad" in resultados:
+                    temp_stats = resultados.get("temperatura", {})
+                    hum_stats = resultados.get("humedad", {})
+                    
+                    # Add rows for each statistic
+                    if temp_stats or hum_stats:
+                        for stat_name in ["max", "min", "avg"]:
+                            stat_label = {"max": "Máximo", "min": "Mínimo", "avg": "Promedio"}.get(stat_name, stat_name.title())
+                            table.insertRow(row)
+                            table.setItem(row, 0, QTableWidgetItem(stat_label))
+                            
+                            temp_val = temp_stats.get(stat_name) if isinstance(temp_stats, dict) else None
+                            hum_val = hum_stats.get(stat_name) if isinstance(hum_stats, dict) else None
+                            
+                            table.setItem(row, 1, QTableWidgetItem(f"{temp_val:.2f}" if temp_val is not None else "N/A"))
+                            table.setItem(row, 2, QTableWidgetItem(f"{hum_val:.2f}" if hum_val is not None else "N/A"))
+                            table.setItem(row, 3, QTableWidgetItem("°C / %"))
+                            row += 1
+                        
+                        # Add count if available
+                        if "count" in resultados:
+                            table.insertRow(row)
+                            table.setItem(row, 0, QTableWidgetItem("Cantidad de Mediciones"))
+                            table.setItem(row, 1, QTableWidgetItem(str(resultados.get("count", 0))))
+                            table.setItem(row, 2, QTableWidgetItem(""))
+                            table.setItem(row, 3, QTableWidgetItem(""))
+                            row += 1
+                else:
+                    # Old format - iterate through keys
+                    for key, value in resultados.items():
+                        if isinstance(value, dict):
+                            table.insertRow(row)
+                            table.setItem(row, 0, QTableWidgetItem(key.replace("_", " ").title()))
+                            
+                            temp = value.get("temperatura")
+                            hum = value.get("humedad")
+                            
+                            table.setItem(row, 1, QTableWidgetItem(f"{temp:.2f}" if temp is not None and isinstance(temp, (int, float)) else "N/A"))
+                            table.setItem(row, 2, QTableWidgetItem(f"{hum:.2f}" if hum is not None and isinstance(hum, (int, float)) else "N/A"))
+                            table.setItem(row, 3, QTableWidgetItem("°C / %"))
+                            row += 1
+                
+                if row > 0:
+                    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+                    table.setMaximumHeight(300)
+                    layout.addWidget(table)
+                else:
+                    # No data to display
+                    no_data_label = QLabel("No hay datos estadísticos disponibles")
+                    no_data_label.setStyleSheet("color: gray; padding: 10px;")
+                    layout.addWidget(no_data_label)
+            else:
+                # Display as JSON if not a dict
+                result_text = QTextEdit()
+                result_text.setReadOnly(True)
+                result_text.setPlainText(json.dumps(resultados, indent=2, ensure_ascii=False, default=str))
+                layout.addWidget(result_text)
+    
+    def _format_query_results(self, resultado: dict, layout: QVBoxLayout):
+        """Format online query results with pagination"""
+        from PyQt6.QtWidgets import QHBoxLayout, QPushButton
+        
+        # Location info
+        if "pais" in resultado or "ciudad" in resultado:
+            location_label = QLabel(f"Ubicación: {resultado.get('ciudad', 'N/A')}, {resultado.get('pais', 'N/A')}")
+            location_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+            layout.addWidget(location_label)
+        
+        # Period info
+        if "periodo" in resultado:
+            periodo = resultado["periodo"]
+            periodo_label = QLabel(
+                f"Período: {periodo.get('inicio', 'N/A')} - {periodo.get('fin', 'N/A')}"
+            )
+            layout.addWidget(periodo_label)
+        
+        # Count
+        cantidad = resultado.get("cantidad_mediciones", 0)
+        count_label = QLabel(f"Total de Mediciones: {cantidad}")
+        count_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
+        layout.addWidget(count_label)
+        
+        # Measurements table with pagination
+        if "mediciones" in resultado:
+            mediciones = resultado["mediciones"]
+            if mediciones and isinstance(mediciones, list):
+                # Pagination settings
+                items_per_page = 100
+                total_pages = (len(mediciones) + items_per_page - 1) // items_per_page if mediciones else 1
+                current_page = [1]  # Use list to allow modification in nested function
+                
+                # Create table
+                table = QTableWidget()
+                table.setColumnCount(5)
+                table.setHorizontalHeaderLabels(["Sensor ID", "Fecha", "Temperatura", "Humedad", "Unidad"])
+                
+                # Page info label
+                page_info_label = QLabel()
+                page_info_label.setStyleSheet("font-weight: bold; margin-top: 5px;")
+                
+                # Create buttons first so they're accessible in update_table
+                prev_btn = QPushButton("← Anterior")
+                next_btn = QPushButton("Siguiente →")
+                
+                def update_table(page: int):
+                    """Update table with measurements for the given page"""
+                    table.setRowCount(0)  # Clear table
+                    start_idx = (page - 1) * items_per_page
+                    end_idx = min(start_idx + items_per_page, len(mediciones))
+                    
+                    for idx, medida in enumerate(mediciones[start_idx:end_idx]):
+                        table_row = idx
+                        table.insertRow(table_row)
+                        table.setItem(table_row, 0, QTableWidgetItem(str(medida.get("sensor_id", "N/A"))))
+                        
+                        fecha = medida.get("timestamp") or medida.get("fecha")
+                        if fecha:
+                            if isinstance(fecha, datetime):
+                                fecha_str = fecha.strftime("%Y-%m-%d %H:%M:%S")
+                            else:
+                                fecha_str = str(fecha)
+                        else:
+                            fecha_str = "N/A"
+                        table.setItem(table_row, 1, QTableWidgetItem(fecha_str))
+                        
+                        temp = medida.get("temperature") or medida.get("temperatura")
+                        hum = medida.get("humidity") or medida.get("humedad")
+                        
+                        table.setItem(table_row, 2, QTableWidgetItem(f"{temp:.2f}" if temp is not None else "N/A"))
+                        table.setItem(table_row, 3, QTableWidgetItem(f"{hum:.2f}" if hum is not None else "N/A"))
+                        table.setItem(table_row, 4, QTableWidgetItem("°C / %"))
+                    
+                    # Update page info
+                    page_info_label.setText(f"Página {page} de {total_pages} (Mostrando {start_idx + 1}-{end_idx} de {len(mediciones)})")
+                    
+                    # Update button states
+                    prev_btn.setEnabled(page > 1)
+                    next_btn.setEnabled(page < total_pages)
+                
+                # Initial table load
+                update_table(1)
+                
+                table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+                table.setMaximumHeight(400)
+                layout.addWidget(table)
+                
+                # Pagination controls (only show if more than 1 page)
+                if total_pages > 1:
+                    layout.addWidget(page_info_label)
+                    
+                    pagination_layout = QHBoxLayout()
+                    pagination_layout.addStretch()
+                    
+                    def go_to_prev_page():
+                        if current_page[0] > 1:
+                            current_page[0] -= 1
+                            update_table(current_page[0])
+                    
+                    def go_to_next_page():
+                        if current_page[0] < total_pages:
+                            current_page[0] += 1
+                            update_table(current_page[0])
+                    
+                    prev_btn.clicked.connect(go_to_prev_page)
+                    prev_btn.setEnabled(False)
+                    pagination_layout.addWidget(prev_btn)
+                    
+                    next_btn.clicked.connect(go_to_next_page)
+                    pagination_layout.addWidget(next_btn)
+                    
+                    pagination_layout.addStretch()
+                    
+                    pagination_widget = QWidget()
+                    pagination_widget.setLayout(pagination_layout)
+                    layout.addWidget(pagination_widget)
+                else:
+                    # Single page, just show info
+                    page_info_label.setText(f"Mostrando todas las {len(mediciones)} mediciones")
+                    layout.addWidget(page_info_label)
+    
+    def _format_generic_results(self, resultado: dict, layout: QVBoxLayout):
+        """Format generic results as JSON"""
+        result_text = QTextEdit()
+        result_text.setReadOnly(True)
+        result_text.setPlainText(json.dumps(resultado, indent=2, ensure_ascii=False, default=str))
+        layout.addWidget(result_text)
 
 
 class ProcessesWidget(QWidget):
@@ -71,6 +505,35 @@ class ProcessesWidget(QWidget):
         requests_container.setLayout(requests_layout)
         self.tabs.addTab(requests_container, "Mis Solicitudes")
         
+        # All requests tab (for técnicos/admins)
+        user_role = self.session_manager.get_user_role()
+        if user_role in ["administrador", "tecnico"]:
+            all_requests_container = QWidget()
+            all_requests_layout = QVBoxLayout()
+            
+            # Status filter
+            filter_layout = QHBoxLayout()
+            filter_layout.addWidget(QLabel("Filtrar por estado:"))
+            self.status_filter = QComboBox()
+            self.status_filter.addItems(["Todos", "Pendiente", "En Progreso", "Completado", "Fallido"])
+            self.status_filter.setCurrentText("Pendiente")
+            self.status_filter.currentTextChanged.connect(self.load_all_requests)
+            filter_layout.addWidget(self.status_filter)
+            filter_layout.addStretch()
+            all_requests_layout.addLayout(filter_layout)
+            
+            self.all_requests_table = QTableWidget()
+            self.all_requests_table.setColumnCount(7)
+            self.all_requests_table.setHorizontalHeaderLabels([
+                "ID", "Usuario", "Email", "Proceso", "Estado", "Fecha de Solicitud", "Parámetros"
+            ])
+            self.all_requests_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+            self.all_requests_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            self.all_requests_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            all_requests_layout.addWidget(self.all_requests_table)
+            all_requests_container.setLayout(all_requests_layout)
+            self.tabs.addTab(all_requests_container, "Todas las Solicitudes")
+        
         layout.addWidget(self.tabs)
         
         # Buttons
@@ -79,11 +542,14 @@ class ProcessesWidget(QWidget):
         request_btn.clicked.connect(self.request_process)
         btn_layout.addWidget(request_btn)
         
-        user_role = self.session_manager.get_user_role()
         if user_role in ["administrador", "tecnico"]:
             execute_btn = QPushButton("Ejecutar Solicitud Seleccionada")
             execute_btn.clicked.connect(self.execute_selected_request)
             btn_layout.addWidget(execute_btn)
+        
+        view_result_btn = QPushButton("Ver Resultado")
+        view_result_btn.clicked.connect(self.view_request_result)
+        btn_layout.addWidget(view_result_btn)
         
         refresh_btn = QPushButton("Actualizar")
         refresh_btn.clicked.connect(self.load_processes)
@@ -102,7 +568,9 @@ class ProcessesWidget(QWidget):
             process_repo = ProcessRepository(mongo_db, neo4j_driver)
             measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
             sensor_repo = SensorRepository(mongo_db)
-            process_service = ProcessService(process_repo, measurement_repo, sensor_repo)
+            user_repo = UserRepository(mongo_db, neo4j_driver)
+            invoice_repo = InvoiceRepository(mongo_db)
+            process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo)
             
             # Load available processes
             processes = process_service.get_all_processes(skip=0, limit=100)
@@ -120,25 +588,135 @@ class ProcessesWidget(QWidget):
                 requests = process_service.get_user_requests(user_id, skip=0, limit=100)
                 self.requests_table.setRowCount(len(requests))
                 for row, request in enumerate(requests):
-                    self.requests_table.setItem(row, 0, QTableWidgetItem(str(request.id)))
+                    # Ensure request.id exists and is valid
+                    request_id = request.id if request.id else None
+                    if not request_id:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Request at row {row} has no ID: {request}")
+                        continue
+                    
+                    self.requests_table.setItem(row, 0, QTableWidgetItem(str(request_id)))
                     self.requests_table.setItem(row, 1, QTableWidgetItem(str(request.process_id)))
                     self.requests_table.setItem(row, 2, QTableWidgetItem(request.estado.value if request.estado else ""))
                     
+                    # Get execution date if completed
                     fecha_str = ""
-                    if request.fecha_solicitud:
-                        if isinstance(request.fecha_solicitud, datetime):
-                            fecha_str = request.fecha_solicitud.strftime("%Y-%m-%d %H:%M:%S")
-                        else:
-                            fecha_str = str(request.fecha_solicitud)
+                    if request.estado and request.estado.value == "completado":
+                        # Try to get execution date
+                        if request_id:
+                            execution = process_service.get_execution(request_id)
+                            if execution and execution.fecha_ejecucion:
+                                if isinstance(execution.fecha_ejecucion, datetime):
+                                    fecha_str = execution.fecha_ejecucion.strftime("%Y-%m-%d %H:%M:%S")
+                                else:
+                                    fecha_str = str(execution.fecha_ejecucion)
+                        # Fallback to request date if no execution found
+                        if not fecha_str and request.fecha_solicitud:
+                            if isinstance(request.fecha_solicitud, datetime):
+                                fecha_str = request.fecha_solicitud.strftime("%Y-%m-%d %H:%M:%S")
+                            else:
+                                fecha_str = str(request.fecha_solicitud)
+                    else:
+                        # Show request date for pending/in-progress requests
+                        if request.fecha_solicitud:
+                            if isinstance(request.fecha_solicitud, datetime):
+                                fecha_str = request.fecha_solicitud.strftime("%Y-%m-%d %H:%M:%S")
+                            else:
+                                fecha_str = str(request.fecha_solicitud)
+                    
                     self.requests_table.setItem(row, 3, QTableWidgetItem(fecha_str))
                     
                     params_text = str(request.parametros) if request.parametros else ""
                     self.requests_table.setItem(row, 4, QTableWidgetItem(params_text))
             else:
                 self.requests_table.setRowCount(0)
+            
+            # Load all requests for técnicos/admins
+            user_role = self.session_manager.get_user_role()
+            if user_role in ["administrador", "tecnico"]:
+                self.load_all_requests()
                 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al cargar procesos: {str(e)}")
+    
+    def load_all_requests(self):
+        """Load all requests for técnicos/admins"""
+        try:
+            mongo_db = db_manager.get_mongo_db()
+            neo4j_driver = db_manager.get_neo4j_driver()
+            cassandra_session = db_manager.get_cassandra_session()
+            
+            process_repo = ProcessRepository(mongo_db, neo4j_driver)
+            measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
+            sensor_repo = SensorRepository(mongo_db)
+            user_repo = UserRepository(mongo_db, neo4j_driver)
+            invoice_repo = InvoiceRepository(mongo_db)
+            process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo)
+            
+            # Get status filter
+            status_filter = None
+            filter_text = self.status_filter.currentText()
+            if filter_text == "Pendiente":
+                status_filter = ProcessStatus.PENDING
+            elif filter_text == "En Progreso":
+                status_filter = ProcessStatus.IN_PROGRESS
+            elif filter_text == "Completado":
+                status_filter = ProcessStatus.COMPLETED
+            elif filter_text == "Fallido":
+                status_filter = ProcessStatus.FAILED
+            
+            # Load all requests
+            all_requests = process_service.get_all_requests(status=status_filter, skip=0, limit=100)
+            self.all_requests_table.setRowCount(len(all_requests))
+            
+            for row, request in enumerate(all_requests):
+                # Ensure request has a valid id
+                request_id = request.get("id") or request.get("_id")
+                if not request_id:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Request at row {row} has no ID: {request}")
+                    continue
+                
+                request_id_str = str(request_id)
+                if request_id_str.lower() in ['none', 'false', '', 'null']:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Request at row {row} has invalid ID: '{request_id_str}'")
+                    continue
+                
+                self.all_requests_table.setItem(row, 0, QTableWidgetItem(request_id_str))
+                
+                user_info = request.get("user", {})
+                self.all_requests_table.setItem(row, 1, QTableWidgetItem(user_info.get("nombre_completo", request.get("user_id", ""))))
+                self.all_requests_table.setItem(row, 2, QTableWidgetItem(user_info.get("email", "N/A")))
+                
+                process_info = request.get("process", {})
+                self.all_requests_table.setItem(row, 3, QTableWidgetItem(process_info.get("nombre", request.get("process_id", ""))))
+                
+                estado = request.get("estado")
+                if isinstance(estado, ProcessStatus):
+                    estado_str = estado.value
+                else:
+                    estado_str = str(estado) if estado else ""
+                self.all_requests_table.setItem(row, 4, QTableWidgetItem(estado_str))
+                
+                fecha_solicitud = request.get("fecha_solicitud")
+                fecha_str = ""
+                if fecha_solicitud:
+                    if isinstance(fecha_solicitud, datetime):
+                        fecha_str = fecha_solicitud.strftime("%Y-%m-%d %H:%M:%S")
+                    else:
+                        fecha_str = str(fecha_solicitud)
+                self.all_requests_table.setItem(row, 5, QTableWidgetItem(fecha_str))
+                
+                params = request.get("parametros", {})
+                params_text = str(params) if params else ""
+                self.all_requests_table.setItem(row, 6, QTableWidgetItem(params_text))
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al cargar todas las solicitudes: {str(e)}")
     
     def request_process(self):
         current_row = self.processes_table.currentRow()
@@ -148,47 +726,64 @@ class ProcessesWidget(QWidget):
         
         process_id = self.processes_table.item(current_row, 0).text()
         
-        reply = QMessageBox.question(
-            self,
-            "Confirmar Solicitud",
-            f"¿Solicitar ejecución del proceso: {self.processes_table.item(current_row, 1).text()}?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                user_id = self.session_manager.get_user_id()
-                if not user_id:
-                    QMessageBox.warning(self, "Error", "Usuario no conectado")
-                    return
-                
-                mongo_db = db_manager.get_mongo_db()
-                neo4j_driver = db_manager.get_neo4j_driver()
-                cassandra_session = db_manager.get_cassandra_session()
-                
-                process_repo = ProcessRepository(mongo_db, neo4j_driver)
-                measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-                sensor_repo = SensorRepository(mongo_db)
-                process_service = ProcessService(process_repo, measurement_repo, sensor_repo)
-                
-                request_data = ProcessRequestCreate(
-                    process_id=process_id,
-                    parametros={}
-                )
-                process_service.request_process(user_id, request_data)
-                QMessageBox.information(self, "Éxito", "Solicitud de proceso enviada exitosamente")
-                self.load_processes()
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"Error al solicitar proceso: {str(e)}")
+        try:
+            user_id = self.session_manager.get_user_id()
+            if not user_id:
+                QMessageBox.warning(self, "Error", "Usuario no conectado")
+                return
+            
+            # Get process details
+            mongo_db = db_manager.get_mongo_db()
+            neo4j_driver = db_manager.get_neo4j_driver()
+            process_repo = ProcessRepository(mongo_db, neo4j_driver)
+            process = process_repo.get_process(process_id)
+            
+            if not process:
+                QMessageBox.warning(self, "Error", "Proceso no encontrado")
+                return
+            
+            # Show dialog to collect parameters
+            dialog = ProcessRequestDialog(process, self)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            
+            # Get parameters from dialog
+            parametros = dialog.get_parametros()
+            
+            # Create the request
+            cassandra_session = db_manager.get_cassandra_session()
+            measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
+            sensor_repo = SensorRepository(mongo_db)
+            user_repo = UserRepository(mongo_db, neo4j_driver)
+            invoice_repo = InvoiceRepository(mongo_db)
+            process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo)
+            
+            request_data = ProcessRequestCreate(
+                process_id=process_id,
+                parametros=parametros
+            )
+            process_service.request_process(user_id, request_data)
+            QMessageBox.information(self, "Éxito", "Solicitud de proceso enviada exitosamente")
+            self.load_processes()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al solicitar proceso: {str(e)}")
     
     def execute_selected_request(self):
         """Execute a selected process request (admin/tecnico only)"""
-        current_row = self.requests_table.currentRow()
-        if current_row < 0:
-            QMessageBox.warning(self, "Error de Selección", "Por favor seleccione una solicitud de proceso para ejecutar")
-            return
+        # Check which table is active
+        current_tab = self.tabs.currentIndex()
         
-        request_id = self.requests_table.item(current_row, 0).text()
+        if current_tab == 2 and hasattr(self, 'all_requests_table'):
+            # All requests tab (for técnicos)
+            current_row = self.all_requests_table.currentRow()
+            if current_row < 0:
+                QMessageBox.warning(self, "Error de Selección", "Por favor seleccione una solicitud de proceso para ejecutar")
+                return
+            request_id = self.all_requests_table.item(current_row, 0).text()
+        else:
+            # My requests tab - técnicos should not execute from here
+            QMessageBox.warning(self, "Error", "Para ejecutar solicitudes, use la pestaña 'Todas las Solicitudes'")
+            return
         
         reply = QMessageBox.question(
             self,
@@ -206,18 +801,129 @@ class ProcessesWidget(QWidget):
                 process_repo = ProcessRepository(mongo_db, neo4j_driver)
                 measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
                 sensor_repo = SensorRepository(mongo_db)
-                process_service = ProcessService(process_repo, measurement_repo, sensor_repo)
+                user_repo = UserRepository(mongo_db, neo4j_driver)
+                invoice_repo = InvoiceRepository(mongo_db)
+                process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo)
                 
                 execution = process_service.execute_process(request_id)
                 
-                if execution.estado.value == "completado":
-                    QMessageBox.information(self, "Éxito", f"Proceso ejecutado exitosamente!\nID de Ejecución: {execution.id}")
-                elif execution.estado.value == "fallido":
-                    error_msg = execution.error_message or "Error desconocido"
-                    QMessageBox.warning(self, "Ejecución Fallida", f"La ejecución del proceso falló:\n{error_msg}")
-                else:
-                    QMessageBox.information(self, "Información", f"Estado de ejecución del proceso: {execution.estado.value}")
+                # Get process name for display
+                request_obj = process_service.get_request(request_id)
+                process_name = ""
+                if request_obj:
+                    process = process_service.get_process(request_obj.process_id)
+                    if process:
+                        process_name = process.nombre
+                
+                # Show results dialog
+                results_dialog = ProcessResultsDialog(execution, process_name, self)
+                results_dialog.exec()
                 
                 self.load_processes()
+                self.load_all_requests()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error al ejecutar proceso: {str(e)}")
+    
+    def view_request_result(self, request_id: str = None):
+        """View results for a completed request"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # PyQt button clicked signal passes False, so treat False as None
+        if request_id is False or request_id is None:
+            request_id = None
+        
+        # Get request_id from parameter or from selected row
+        if request_id is None:
+            # Try to get from current selection
+            current_tab = self.tabs.currentIndex()
+            if current_tab == 1:  # My requests tab
+                current_row = self.requests_table.currentRow()
+                if current_row < 0:
+                    QMessageBox.warning(self, "Error de Selección", "Por favor seleccione una solicitud para ver sus resultados")
+                    return
+                table_item = self.requests_table.item(current_row, 0)
+                if not table_item:
+                    QMessageBox.warning(self, "Error", "No se pudo obtener el ID de la solicitud desde la tabla")
+                    logger.error(f"Table item is None at row {current_row}, column 0")
+                    return
+                request_id = table_item.text()
+                logger.debug(f"Retrieved request_id from table: '{request_id}' (type: {type(request_id)})")
+            elif current_tab == 2 and hasattr(self, 'all_requests_table'):  # All requests tab
+                current_row = self.all_requests_table.currentRow()
+                if current_row < 0:
+                    QMessageBox.warning(self, "Error de Selección", "Por favor seleccione una solicitud para ver sus resultados")
+                    return
+                table_item = self.all_requests_table.item(current_row, 0)
+                if not table_item:
+                    QMessageBox.warning(self, "Error", "No se pudo obtener el ID de la solicitud desde la tabla")
+                    logger.error(f"Table item is None at row {current_row}, column 0")
+                    return
+                request_id = table_item.text()
+                logger.debug(f"Retrieved request_id from all_requests table: '{request_id}' (type: {type(request_id)})")
+            else:
+                QMessageBox.warning(self, "Error", "Por favor seleccione una solicitud completada")
+                return
+        
+        # Validate request_id before using it
+        if not request_id:
+            logger.error(f"Invalid request_id: {request_id} (type: {type(request_id)})")
+            QMessageBox.warning(self, "Error", f"ID de solicitud inválido: {request_id}")
+            return
+        
+        # Ensure it's a string and clean it
+        request_id = str(request_id).strip()
+        
+        # Check for invalid values
+        if request_id.lower() in ['none', 'false', '', 'null']:
+            logger.error(f"Invalid request_id after cleaning: '{request_id}'")
+            QMessageBox.warning(self, "Error", f"ID de solicitud inválido: '{request_id}'")
+            return
+        
+        logger.info(f"Viewing results for request_id: {request_id}")
+        
+        try:
+            mongo_db = db_manager.get_mongo_db()
+            neo4j_driver = db_manager.get_neo4j_driver()
+            cassandra_session = db_manager.get_cassandra_session()
+            
+            process_repo = ProcessRepository(mongo_db, neo4j_driver)
+            measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
+            sensor_repo = SensorRepository(mongo_db)
+            user_repo = UserRepository(mongo_db, neo4j_driver)
+            invoice_repo = InvoiceRepository(mongo_db)
+            process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo)
+            
+            # Get execution
+            execution = process_service.get_execution(request_id)
+            if not execution:
+                QMessageBox.warning(self, "Error", "No se encontraron resultados de ejecución para esta solicitud")
+                return
+            
+            # Check if resultado exists
+            if execution.resultado is None:
+                QMessageBox.information(
+                    self, 
+                    "Información", 
+                    f"La ejecución se completó pero no hay resultados almacenados.\n"
+                    f"Estado: {execution.estado.value if execution.estado else 'N/A'}\n"
+                    f"ID Ejecución: {execution.id}\n\n"
+                    f"Esto puede ocurrir si no hay datos de mediciones para los parámetros especificados."
+                )
+                return
+            
+            # Get process name
+            request_obj = process_service.get_request(request_id)
+            process_name = ""
+            if request_obj:
+                process = process_service.get_process(request_obj.process_id)
+                if process:
+                    process_name = process.nombre
+            
+            # Show results dialog
+            results_dialog = ProcessResultsDialog(execution, process_name, self)
+            results_dialog.exec()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al cargar resultados: {str(e)}")
+    

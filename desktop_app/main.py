@@ -3,6 +3,9 @@ Main entry point for desktop application
 """
 import sys
 import logging
+import os
+from pathlib import Path
+from datetime import datetime
 from PyQt6.QtWidgets import QApplication, QMessageBox
 from PyQt6.QtCore import Qt
 
@@ -10,11 +13,49 @@ from desktop_app.core.database import db_manager
 from desktop_app.ui.login_window import LoginWindow
 from desktop_app.ui.main_window import MainWindow
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure logging to both file and console
+def setup_logging():
+    """Configure logging to write to both file and console"""
+    # Create logs directory if it doesn't exist
+    log_dir = Path(__file__).parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+    
+    # Log file with timestamp
+    log_file = log_dir / f"app_{datetime.now().strftime('%Y%m%d')}.log"
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+    
+    # Clear any existing handlers
+    root_logger.handlers = []
+    
+    # File handler - detailed logs
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    file_handler.setFormatter(file_formatter)
+    root_logger.addHandler(file_handler)
+    
+    # Console handler - important messages only
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%H:%M:%S'
+    )
+    console_handler.setFormatter(console_formatter)
+    root_logger.addHandler(console_handler)
+    
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging initialized. Log file: {log_file}")
+    return str(log_file)
+
+# Setup logging
+log_file_path = setup_logging()
 logger = logging.getLogger(__name__)
 
 

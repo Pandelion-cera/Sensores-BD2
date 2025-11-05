@@ -17,6 +17,10 @@ from desktop_app.ui.alert_rules_widget import AlertRulesWidget
 from desktop_app.ui.messages_widget import MessagesWidget
 from desktop_app.ui.invoices_widget import InvoicesWidget
 from desktop_app.ui.processes_widget import ProcessesWidget
+from pathlib import Path
+import logging
+import subprocess
+import platform
 
 
 class MainWindow(QMainWindow):
@@ -119,6 +123,10 @@ class MainWindow(QMainWindow):
         refresh_action.triggered.connect(self.refresh_current_tab)
         view_menu.addAction(refresh_action)
         
+        view_logs_action = QAction("Ver Logs", self)
+        view_logs_action.triggered.connect(self.open_logs_folder)
+        view_menu.addAction(view_logs_action)
+        
         # Help menu
         help_menu = menubar.addMenu("Ayuda")
         about_action = QAction("Acerca de", self)
@@ -194,6 +202,38 @@ class MainWindow(QMainWindow):
             # Emit signal to notify main that logout was requested
             self.logout_requested.emit()
             self.close()
+    
+    def open_logs_folder(self):
+        """Open the logs folder in file explorer"""
+        log_dir = Path(__file__).parent.parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+        
+        logger = logging.getLogger(__name__)
+        logger.info(f"Opening logs folder: {log_dir}")
+        
+        try:
+            if platform.system() == "Windows":
+                subprocess.Popen(f'explorer "{log_dir}"')
+            elif platform.system() == "Darwin":  # macOS
+                subprocess.Popen(["open", str(log_dir)])
+            else:  # Linux
+                subprocess.Popen(["xdg-open", str(log_dir)])
+            
+            QMessageBox.information(
+                self,
+                "Carpeta de Logs",
+                f"La carpeta de logs se ha abierto en:\n{log_dir}\n\n"
+                f"Los archivos de log se guardan con el formato:\napp_YYYYMMDD.log"
+            )
+        except Exception as e:
+            logger.error(f"Error opening logs folder: {e}")
+            QMessageBox.warning(
+                self,
+                "Error",
+                f"No se pudo abrir la carpeta de logs.\n\n"
+                f"Ruta: {log_dir}\n"
+                f"Error: {str(e)}"
+            )
     
     def show_about(self):
         """Show about dialog"""

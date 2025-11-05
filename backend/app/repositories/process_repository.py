@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from bson import ObjectId
 from pymongo.database import Database
 from neo4j import Driver
@@ -84,6 +84,23 @@ class ProcessRepository:
         """Get all requests for a user"""
         requests = []
         for request in self.requests_col.find({"user_id": user_id}).sort("fecha_solicitud", -1).skip(skip).limit(limit):
+            request["_id"] = str(request["_id"])
+            requests.append(ProcessRequest(**request))
+        return requests
+    
+    def get_all_requests(
+        self, 
+        status: Optional[ProcessStatus] = None, 
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[ProcessRequest]:
+        """Get all requests with optional status filter"""
+        query = {}
+        if status:
+            query["estado"] = status
+        
+        requests = []
+        for request in self.requests_col.find(query).sort("fecha_solicitud", -1).skip(skip).limit(limit):
             request["_id"] = str(request["_id"])
             requests.append(ProcessRequest(**request))
         return requests
