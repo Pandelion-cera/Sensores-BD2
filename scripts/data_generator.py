@@ -8,8 +8,8 @@ import random
 from datetime import datetime
 import uuid
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add scripts directory to path so we can import from app
+sys.path.insert(0, str(Path(__file__).parent))
 
 from app.core.database import db_manager
 from app.core.config import settings

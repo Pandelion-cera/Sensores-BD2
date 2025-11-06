@@ -31,26 +31,20 @@ Sistema de gestión de sensores climáticos con arquitectura de persistencia pol
    - Cache de consultas frecuentes
    - **Justificación**: Latencia sub-milisegundo, ideal para sesiones y alertas push, estructuras de datos avanzadas (Streams)
 
-### Backend (FastAPI)
+### Aplicación de Escritorio (PyQt6)
 
-- **Python 3.11** con FastAPI
+- **Python 3.11** con PyQt6
 - Patrón Repository para abstracción de datos
 - Servicios para lógica de negocio
-- JWT para autenticación
-- Endpoints REST documentados con Swagger
-
-### Frontend (Next.js 14)
-
-- React con TypeScript
-- App Router de Next.js 14
-- Tailwind CSS + Shadcn UI
-- Axios para comunicación con API
+- Interfaz gráfica de usuario nativa
+- Conexión directa a las bases de datos
 
 ## Requisitos Previos
 
 - Docker y Docker Compose
+- Python 3.8+ con PyQt6
 - Al menos 8GB de RAM disponible
-- Puertos disponibles: 3000, 8000, 27017, 9042, 7474, 7687, 6379
+- Puertos disponibles: 27017, 9042, 7474, 7687, 6379
 
 ## Instalación y Ejecución
 
@@ -71,8 +65,6 @@ Esto iniciará:
 - Cassandra
 - Neo4j
 - Redis
-- Backend (FastAPI)
-- Frontend (Next.js)
 
 **Nota**: Cassandra puede tardar 1-2 minutos en estar completamente listo.
 
@@ -87,7 +79,7 @@ Todos los servicios deben mostrar estado "Up" o "healthy".
 ### 4. Inicializar las Bases de Datos
 
 ```bash
-docker-compose exec backend python scripts/init_databases.py
+python scripts/init_databases.py
 ```
 
 Este script:
@@ -99,7 +91,7 @@ Este script:
 ### 5. Cargar Datos de Prueba
 
 ```bash
-docker-compose exec backend python scripts/seed_data.py
+python scripts/seed_data.py
 ```
 
 Este script crea:
@@ -114,7 +106,7 @@ Este script crea:
 Para simular mediciones en tiempo real:
 
 ```bash
-docker-compose exec backend python scripts/data_generator.py
+python scripts/data_generator.py
 ```
 
 El generador:
@@ -127,20 +119,19 @@ Para detenerlo, presiona `Ctrl+C`.
 
 ## Acceso a la Aplicación
 
-### Frontend Web
+### Aplicación de Escritorio
 
-**URL**: http://localhost:3000
+Ejecuta desde el directorio `desktop_app`:
+
+```bash
+cd desktop_app
+python main.py
+```
 
 **Usuarios de prueba**:
 - Administrador: `admin@test.com` / `admin123`
 - Técnico: `tecnico@test.com` / `tecnico123`
 - Usuario: `user@test.com` / `user123`
-
-### API Backend
-
-**URL**: http://localhost:8000
-**Documentación Swagger**: http://localhost:8000/docs
-**Health Check**: http://localhost:8000/health
 
 ### Interfaces de Bases de Datos
 
@@ -216,30 +207,26 @@ Para detenerlo, presiona `Ctrl+C`.
 ## Flujo de Datos
 
 1. **Ingesta**: Mediciones → Cassandra (ambas tablas) + Redis Stream (alertas)
-2. **Alertas**: Worker evalúa umbrales → Redis Pub/Sub → Frontend (SSE)
+2. **Alertas**: Worker evalúa umbrales → Redis Pub/Sub → Aplicación de Escritorio
 3. **Transaccional**: Usuarios/Procesos/Facturas → MongoDB
 4. **Permisos**: Verificación de acceso → Neo4j
 5. **Reportes**: PySpark agrega datos de Cassandra → MongoDB (resultados)
 
 ## Comandos Útiles
 
-### Ver logs de un servicio
+### Ver logs de un servicio de base de datos
 
 ```bash
-docker-compose logs -f backend
-docker-compose logs -f frontend
+docker-compose logs -f mongodb
+docker-compose logs -f cassandra
+docker-compose logs -f neo4j
+docker-compose logs -f redis
 ```
 
 ### Reiniciar un servicio
 
 ```bash
-docker-compose restart backend
-```
-
-### Acceder al shell del backend
-
-```bash
-docker-compose exec backend /bin/bash
+docker-compose restart mongodb
 ```
 
 ### Limpiar todo y empezar de nuevo
@@ -254,27 +241,24 @@ docker-compose up -d
 
 ```
 BD2-TPO/
-├── backend/
-│   ├── app/
-│   │   ├── api/              # Endpoints REST
-│   │   ├── core/             # Config, database, security
+├── desktop_app/
+│   ├── ui/                   # Interfaz PyQt6
+│   ├── models/               # Modelos Pydantic
+│   ├── repositories/         # Acceso a BD
+│   ├── services/             # Lógica de negocio
+│   ├── core/                 # Config, database, security
+│   ├── background/           # Workers en background
+│   └── main.py               # Aplicación principal
+├── scripts/
+│   ├── app/                  # Módulos necesarios para scripts
+│   │   ├── core/             # Config, database
 │   │   ├── models/           # Modelos Pydantic
 │   │   ├── repositories/     # Acceso a BD
-│   │   ├── services/         # Lógica de negocio
-│   │   └── main.py           # Aplicación FastAPI
-│   ├── scripts/
-│   │   ├── init_databases.py # Inicialización
-│   │   ├── seed_data.py      # Datos de prueba
-│   │   └── data_generator.py # Simulador
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/
-│   ├── src/
-│   │   ├── app/              # Páginas Next.js
-│   │   ├── components/       # Componentes UI
-│   │   └── lib/              # API client
-│   ├── package.json
-│   └── Dockerfile
+│   │   └── services/         # Servicios necesarios
+│   ├── init_databases.py     # Inicialización
+│   ├── seed_data.py          # Datos de prueba
+│   ├── data_generator.py     # Simulador
+│   └── fix_sensors.py        # Utilidad de reparación
 ├── docker-compose.yml
 └── README.md
 ```
@@ -312,15 +296,15 @@ BD2-TPO/
 - Esperar 2-3 minutos después de `docker-compose up`
 - Verificar logs: `docker-compose logs cassandra`
 
-### Backend no conecta a las BD
-- Verificar que todos los contenedores estén "Up"
-- Reiniciar backend: `docker-compose restart backend`
-- Ver logs: `docker-compose logs backend`
+### Bases de datos no conectan
+- Verificar que todos los contenedores estén "Up": `docker-compose ps`
+- Reiniciar servicios de BD si es necesario: `docker-compose restart mongodb`
+- Ver logs: `docker-compose logs mongodb`
 
-### Frontend no carga
-- Verificar que backend esté respondiendo en puerto 8000
-- Limpiar caché del navegador
-- Ver logs: `docker-compose logs frontend`
+### Aplicación de escritorio no conecta
+- Verificar que las bases de datos estén corriendo: `docker-compose ps`
+- Verificar configuración en `desktop_app/core/config.py`
+- Ver logs de las bases de datos: `docker-compose logs mongodb`
 
 ### Error "Session not found"
 - Las sesiones expiran después de 24 horas
