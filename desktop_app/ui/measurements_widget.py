@@ -334,15 +334,24 @@ class MeasurementsWidget(QWidget):
                 
                 self.table.setItem(row, 0, QTableWidgetItem(timestamp_str))
                 self.table.setItem(row, 1, QTableWidgetItem(str(measurement.get("sensor_id", ""))))
-                self.table.setItem(row, 2, QTableWidgetItem(f"{measurement.get('temperature', 0):.2f}"))
-                self.table.setItem(row, 3, QTableWidgetItem(f"{measurement.get('humidity', 0):.2f}"))
+                
+                # Use Spanish keys (temperatura, humedad) as returned by the service
+                temp = measurement.get("temperatura")
+                humidity = measurement.get("humedad")
+                
+                temp_str = f"{temp:.2f}" if temp is not None else "N/A"
+                humidity_str = f"{humidity:.2f}" if humidity is not None else "N/A"
+                
+                self.table.setItem(row, 2, QTableWidgetItem(temp_str))
+                self.table.setItem(row, 3, QTableWidgetItem(humidity_str))
                 self.table.setItem(row, 4, QTableWidgetItem(str(measurement.get("pais", ""))))
                 self.table.setItem(row, 5, QTableWidgetItem(str(measurement.get("ciudad", ""))))
             
             # Calculate and show stats
             if measurements:
-                temps = [m.get("temperature", 0) for m in measurements if m.get("temperature") is not None]
-                hums = [m.get("humidity", 0) for m in measurements if m.get("humidity") is not None]
+                # Use Spanish keys (temperatura, humedad) as returned by the service
+                temps = [m.get("temperatura") for m in measurements if m.get("temperatura") is not None]
+                hums = [m.get("humedad") for m in measurements if m.get("humedad") is not None]
                 
                 if temps:
                     avg_temp = sum(temps) / len(temps)

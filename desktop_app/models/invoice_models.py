@@ -37,6 +37,7 @@ class Invoice(BaseModel):
 class InvoiceCreate(BaseModel):
     user_id: str
     items: List[InvoiceItem]
+    fecha_emision: Optional[datetime] = None  # If None, will use current date
     fecha_vencimiento: Optional[datetime] = None
 
 

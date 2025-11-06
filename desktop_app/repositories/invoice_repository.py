@@ -18,10 +18,14 @@ class InvoiceRepository:
     # Invoice CRUD
     def create_invoice(self, invoice_data: InvoiceCreate) -> Invoice:
         """Create a new invoice"""
-        invoice_dict = invoice_data.model_dump()
+        invoice_dict = invoice_data.model_dump(exclude_none=True)
         total = sum(item.subtotal for item in invoice_data.items)
         invoice_dict["total"] = total
         invoice_dict["estado"] = InvoiceStatus.PENDING
+        
+        # Ensure fecha_emision is set (use provided or current date)
+        if "fecha_emision" not in invoice_dict or invoice_dict["fecha_emision"] is None:
+            invoice_dict["fecha_emision"] = datetime.utcnow()
         
         result = self.invoices_col.insert_one(invoice_dict)
         invoice_dict["_id"] = str(result.inserted_id)

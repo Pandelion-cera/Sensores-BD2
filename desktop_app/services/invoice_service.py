@@ -23,7 +23,8 @@ class InvoiceService:
         user_id: str, 
         process_ids: List[str],
         request_id: Optional[str] = None,
-        execution_id: Optional[str] = None
+        execution_id: Optional[str] = None,
+        fecha_emision: Optional[datetime] = None
     ) -> Invoice:
         """Create an invoice for a user based on executed processes"""
         items = []
@@ -45,12 +46,17 @@ class InvoiceService:
         if not items:
             raise ValueError("No valid processes found for invoice")
         
-        # Set due date to 30 days from now
-        fecha_vencimiento = datetime.utcnow() + timedelta(days=30)
+        # Use provided fecha_emision or current date
+        if fecha_emision is None:
+            fecha_emision = datetime.utcnow()
+        
+        # Set due date to 30 days from fecha_emision (not from now)
+        fecha_vencimiento = fecha_emision + timedelta(days=30)
         
         invoice_data = InvoiceCreate(
             user_id=user_id,
             items=items,
+            fecha_emision=fecha_emision,
             fecha_vencimiento=fecha_vencimiento
         )
         

@@ -185,13 +185,16 @@ class ProcessService:
             if self.invoice_service:
                 try:
                     logger.info(f"Creating invoice for user {request.user_id} for process {request.process_id}")
+                    # Use execution date as invoice emission date
+                    fecha_emision = execution.fecha_ejecucion if execution.fecha_ejecucion else datetime.utcnow()
                     invoice = self.invoice_service.create_invoice_for_user(
                         request.user_id,
                         [request.process_id],
                         request_id=request.id,
-                        execution_id=execution.id
+                        execution_id=execution.id,
+                        fecha_emision=fecha_emision
                     )
-                    logger.info(f"Invoice created successfully. Invoice ID: {invoice.id}, Total: ${invoice.total:.2f}, Request ID: {request.id}, Execution ID: {execution.id}")
+                    logger.info(f"Invoice created successfully. Invoice ID: {invoice.id}, Total: ${invoice.total:.2f}, Request ID: {request.id}, Execution ID: {execution.id}, Fecha Emision: {fecha_emision}")
                 except Exception as invoice_error:
                     # Don't fail execution if invoice creation fails
                     logger.error(f"Failed to create invoice for user {request.user_id} after process execution: {invoice_error}", exc_info=True)

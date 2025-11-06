@@ -1,6 +1,7 @@
 from typing import Optional, List
 from bson import ObjectId
 from pymongo.database import Database
+from datetime import datetime
 
 from desktop_app.models.message_models import Message, MessageCreate, MessageType
 
@@ -15,7 +16,8 @@ class MessageRepository:
             "sender_id": sender_id,
             "recipient_type": message_data.recipient_type,
             "recipient_id": message_data.recipient_id,
-            "content": message_data.content
+            "content": message_data.content,
+            "timestamp": datetime.utcnow()  # Explicitly set timestamp
         }
         
         result = self.collection.insert_one(message_dict)
@@ -29,6 +31,17 @@ class MessageRepository:
             message = self.collection.find_one({"_id": ObjectId(message_id)})
             if message:
                 message["_id"] = str(message["_id"])
+                # Ensure timestamp is properly parsed
+                if "timestamp" in message and message["timestamp"]:
+                    if isinstance(message["timestamp"], str):
+                        try:
+                            message["timestamp"] = datetime.fromisoformat(message["timestamp"].replace("Z", "+00:00"))
+                        except:
+                            message["timestamp"] = datetime.utcnow()
+                    elif not isinstance(message["timestamp"], datetime):
+                        message["timestamp"] = datetime.utcnow()
+                else:
+                    message["timestamp"] = datetime.utcnow()
                 return Message(**message)
         except:
             return None
@@ -44,6 +57,17 @@ class MessageRepository:
         
         for message in self.collection.find(query).sort("timestamp", -1).skip(skip).limit(limit):
             message["_id"] = str(message["_id"])
+            # Ensure timestamp is properly parsed
+            if "timestamp" in message and message["timestamp"]:
+                if isinstance(message["timestamp"], str):
+                    try:
+                        message["timestamp"] = datetime.fromisoformat(message["timestamp"].replace("Z", "+00:00"))
+                    except:
+                        message["timestamp"] = datetime.utcnow()
+                elif not isinstance(message["timestamp"], datetime):
+                    message["timestamp"] = datetime.utcnow()
+            else:
+                message["timestamp"] = datetime.utcnow()
             messages.append(Message(**message))
         
         return messages
@@ -58,6 +82,17 @@ class MessageRepository:
         
         for message in self.collection.find(query).sort("timestamp", -1).skip(skip).limit(limit):
             message["_id"] = str(message["_id"])
+            # Ensure timestamp is properly parsed
+            if "timestamp" in message and message["timestamp"]:
+                if isinstance(message["timestamp"], str):
+                    try:
+                        message["timestamp"] = datetime.fromisoformat(message["timestamp"].replace("Z", "+00:00"))
+                    except:
+                        message["timestamp"] = datetime.utcnow()
+                elif not isinstance(message["timestamp"], datetime):
+                    message["timestamp"] = datetime.utcnow()
+            else:
+                message["timestamp"] = datetime.utcnow()
             messages.append(Message(**message))
         
         return messages
@@ -75,6 +110,17 @@ class MessageRepository:
         
         for message in self.collection.find(query).sort("timestamp", -1).skip(skip).limit(limit):
             message["_id"] = str(message["_id"])
+            # Ensure timestamp is properly parsed
+            if "timestamp" in message and message["timestamp"]:
+                if isinstance(message["timestamp"], str):
+                    try:
+                        message["timestamp"] = datetime.fromisoformat(message["timestamp"].replace("Z", "+00:00"))
+                    except:
+                        message["timestamp"] = datetime.utcnow()
+                elif not isinstance(message["timestamp"], datetime):
+                    message["timestamp"] = datetime.utcnow()
+            else:
+                message["timestamp"] = datetime.utcnow()
             messages.append(Message(**message))
         
         return messages

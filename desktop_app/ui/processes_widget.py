@@ -5,9 +5,10 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QMessageBox, QTabWidget,
     QHeaderView, QAbstractItemView, QComboBox, QDialog,
-    QLineEdit, QDateTimeEdit, QTextEdit, QGroupBox, QScrollArea
+    QLineEdit, QDateTimeEdit, QTextEdit, QGroupBox, QScrollArea,
+    QTimeEdit, QSpinBox, QRadioButton, QButtonGroup
 )
-from PyQt6.QtCore import Qt, QDateTime
+from PyQt6.QtCore import Qt, QDateTime, QTime
 from datetime import datetime
 import json
 
@@ -17,10 +18,15 @@ from desktop_app.repositories.measurement_repository import MeasurementRepositor
 from desktop_app.repositories.sensor_repository import SensorRepository
 from desktop_app.repositories.user_repository import UserRepository
 from desktop_app.repositories.invoice_repository import InvoiceRepository
+from desktop_app.repositories.scheduled_process_repository import ScheduledProcessRepository
 from desktop_app.services.process_service import ProcessService
+from desktop_app.services.scheduled_process_service import ScheduledProcessService
 from desktop_app.utils.session_manager import SessionManager
 from desktop_app.core.config import settings
 from desktop_app.models.process_models import ProcessRequestCreate, ProcessStatus, Process, Execution
+from desktop_app.models.scheduled_process_models import (
+    ScheduledProcessCreate, ScheduledProcessUpdate, ScheduleType, ScheduleStatus
+)
 
 
 class ProcessRequestDialog(QDialog):
@@ -505,6 +511,30 @@ class ProcessesWidget(QWidget):
         requests_container.setLayout(requests_layout)
         self.tabs.addTab(requests_container, "Mis Solicitudes")
         
+        # Scheduled processes tab
+        scheduled_container = QWidget()
+        scheduled_layout = QVBoxLayout()
+        
+        # Buttons for scheduled processes
+        scheduled_btn_layout = QHBoxLayout()
+        schedule_btn = QPushButton("Programar Proceso")
+        schedule_btn.clicked.connect(self.show_schedule_dialog)
+        scheduled_btn_layout.addWidget(schedule_btn)
+        scheduled_btn_layout.addStretch()
+        scheduled_layout.addLayout(scheduled_btn_layout)
+        
+        self.scheduled_table = QTableWidget()
+        self.scheduled_table.setColumnCount(7)
+        self.scheduled_table.setHorizontalHeaderLabels([
+            "Proceso", "Tipo", "Próxima Ejecución", "Última Ejecución", "Estado", "Acciones", "ID"
+        ])
+        self.scheduled_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.scheduled_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.scheduled_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        scheduled_layout.addWidget(self.scheduled_table)
+        scheduled_container.setLayout(scheduled_layout)
+        self.tabs.addTab(scheduled_container, "Procesos Programados")
+        
         # All requests tab (for técnicos/admins)
         user_role = self.session_manager.get_user_role()
         if user_role in ["administrador", "tecnico"]:
@@ -581,6 +611,9 @@ class ProcessesWidget(QWidget):
                 self.processes_table.setItem(row, 2, QTableWidgetItem(process.tipo.value if process.tipo else ""))
                 self.processes_table.setItem(row, 3, QTableWidgetItem(process.descripcion or ""))
                 self.processes_table.setItem(row, 4, QTableWidgetItem(f"${process.costo:.2f}"))
+            
+            # Load scheduled processes
+            self.load_scheduled_processes()
             
             # Load user requests
             user_id = self.session_manager.get_user_id()
@@ -772,8 +805,10 @@ class ProcessesWidget(QWidget):
         """Execute a selected process request (admin/tecnico only)"""
         # Check which table is active
         current_tab = self.tabs.currentIndex()
+        current_tab_text = self.tabs.tabText(current_tab) if current_tab >= 0 else ""
         
-        if current_tab == 2 and hasattr(self, 'all_requests_table'):
+        # Check if we're in "Todas las Solicitudes" tab (index 3 after adding scheduled processes tab)
+        if current_tab_text == "Todas las Solicitudes" and hasattr(self, 'all_requests_table'):
             # All requests tab (for técnicos)
             current_row = self.all_requests_table.currentRow()
             if current_row < 0:
@@ -837,7 +872,9 @@ class ProcessesWidget(QWidget):
         if request_id is None:
             # Try to get from current selection
             current_tab = self.tabs.currentIndex()
-            if current_tab == 1:  # My requests tab
+            current_tab_text = self.tabs.tabText(current_tab) if current_tab >= 0 else ""
+            
+            if current_tab_text == "Mis Solicitudes":
                 current_row = self.requests_table.currentRow()
                 if current_row < 0:
                     QMessageBox.warning(self, "Error de Selección", "Por favor seleccione una solicitud para ver sus resultados")
@@ -849,7 +886,7 @@ class ProcessesWidget(QWidget):
                     return
                 request_id = table_item.text()
                 logger.debug(f"Retrieved request_id from table: '{request_id}' (type: {type(request_id)})")
-            elif current_tab == 2 and hasattr(self, 'all_requests_table'):  # All requests tab
+            elif current_tab_text == "Todas las Solicitudes" and hasattr(self, 'all_requests_table'):
                 current_row = self.all_requests_table.currentRow()
                 if current_row < 0:
                     QMessageBox.warning(self, "Error de Selección", "Por favor seleccione una solicitud para ver sus resultados")
@@ -923,7 +960,558 @@ class ProcessesWidget(QWidget):
             # Show results dialog
             results_dialog = ProcessResultsDialog(execution, process_name, self)
             results_dialog.exec()
-            
+        
         except Exception as e:
+            logger.error(f"Error viewing request result: {e}", exc_info=True)
             QMessageBox.critical(self, "Error", f"Error al cargar resultados: {str(e)}")
+    
+    def load_scheduled_processes(self):
+        """Load scheduled processes for the current user"""
+        try:
+            user_id = self.session_manager.get_user_id()
+            if not user_id:
+                self.scheduled_table.setRowCount(0)
+                return
+            
+            mongo_db = db_manager.get_mongo_db()
+            schedule_repo = ScheduledProcessRepository(mongo_db)
+            schedule_service = ScheduledProcessService(schedule_repo)
+            
+            schedules = schedule_service.get_user_schedules(user_id, skip=0, limit=100)
+            
+            # Get process names
+            neo4j_driver = db_manager.get_neo4j_driver()
+            process_repo = ProcessRepository(mongo_db, neo4j_driver)
+            
+            self.scheduled_table.setRowCount(len(schedules))
+            for row, schedule in enumerate(schedules):
+                # Get process name
+                process = process_repo.get_process(schedule.process_id)
+                process_name = process.nombre if process else f"Proceso {schedule.process_id[:8]}"
+                
+                # Schedule type
+                type_map = {
+                    ScheduleType.DAILY: "Diario",
+                    ScheduleType.WEEKLY: "Semanal",
+                    ScheduleType.MONTHLY: "Mensual",
+                    ScheduleType.ANNUAL: "Anual"
+                }
+                type_str = type_map.get(schedule.schedule_type, schedule.schedule_type.value)
+                
+                self.scheduled_table.setItem(row, 0, QTableWidgetItem(process_name))
+                self.scheduled_table.setItem(row, 1, QTableWidgetItem(type_str))
+                
+                # Next execution
+                next_exec_str = ""
+                if schedule.next_execution:
+                    if isinstance(schedule.next_execution, datetime):
+                        next_exec_str = schedule.next_execution.strftime("%Y-%m-%d %H:%M:%S")
+                    else:
+                        next_exec_str = str(schedule.next_execution)
+                self.scheduled_table.setItem(row, 2, QTableWidgetItem(next_exec_str))
+                
+                # Last execution
+                last_exec_str = "Nunca"
+                if schedule.last_execution:
+                    if isinstance(schedule.last_execution, datetime):
+                        last_exec_str = schedule.last_execution.strftime("%Y-%m-%d %H:%M:%S")
+                    else:
+                        last_exec_str = str(schedule.last_execution)
+                self.scheduled_table.setItem(row, 3, QTableWidgetItem(last_exec_str))
+                
+                # Status
+                status_str = "Activo" if schedule.status == ScheduleStatus.ACTIVE else "Pausado"
+                self.scheduled_table.setItem(row, 4, QTableWidgetItem(status_str))
+                
+                # Actions
+                actions_widget = QWidget()
+                actions_layout = QHBoxLayout()
+                actions_layout.setContentsMargins(5, 2, 5, 2)
+                
+                edit_btn = QPushButton("Editar")
+                edit_btn.clicked.connect(lambda checked, s=schedule: self.edit_schedule(s))
+                actions_layout.addWidget(edit_btn)
+                
+                pause_resume_text = "Pausar" if schedule.status == ScheduleStatus.ACTIVE else "Reanudar"
+                pause_resume_btn = QPushButton(pause_resume_text)
+                pause_resume_btn.clicked.connect(lambda checked, s=schedule: self.pause_resume_schedule(s))
+                actions_layout.addWidget(pause_resume_btn)
+                
+                delete_btn = QPushButton("Eliminar")
+                delete_btn.setStyleSheet("background-color: #dc3545; color: white;")
+                delete_btn.clicked.connect(lambda checked, s=schedule: self.delete_schedule(s))
+                actions_layout.addWidget(delete_btn)
+                
+                actions_widget.setLayout(actions_layout)
+                self.scheduled_table.setCellWidget(row, 5, actions_widget)
+                
+                # Store schedule ID
+                self.scheduled_table.setItem(row, 6, QTableWidgetItem(str(schedule.id)))
+        
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al cargar procesos programados: {str(e)}")
+            self.scheduled_table.setRowCount(0)
+    
+    def show_schedule_dialog(self):
+        """Show dialog to create a new scheduled process"""
+        dialog = ScheduleProcessDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.load_scheduled_processes()
+    
+    def edit_schedule(self, schedule):
+        """Edit an existing scheduled process"""
+        dialog = EditScheduleDialog(schedule, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.load_scheduled_processes()
+    
+    def pause_resume_schedule(self, schedule):
+        """Pause or resume a scheduled process"""
+        try:
+            mongo_db = db_manager.get_mongo_db()
+            schedule_repo = ScheduledProcessRepository(mongo_db)
+            schedule_service = ScheduledProcessService(schedule_repo)
+            
+            if schedule.status == ScheduleStatus.ACTIVE:
+                schedule_service.pause_schedule(schedule.id)
+                QMessageBox.information(self, "Éxito", "Proceso programado pausado")
+            else:
+                schedule_service.resume_schedule(schedule.id)
+                QMessageBox.information(self, "Éxito", "Proceso programado reanudado")
+            
+            self.load_scheduled_processes()
+        
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al cambiar estado: {str(e)}")
+    
+    def delete_schedule(self, schedule):
+        """Delete a scheduled process"""
+        reply = QMessageBox.question(
+            self,
+            "Confirmar Eliminación",
+            f"¿Está seguro de que desea eliminar el proceso programado '{schedule.id}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                mongo_db = db_manager.get_mongo_db()
+                schedule_repo = ScheduledProcessRepository(mongo_db)
+                schedule_service = ScheduledProcessService(schedule_repo)
+                
+                schedule_service.delete_schedule(schedule.id)
+                QMessageBox.information(self, "Éxito", "Proceso programado eliminado")
+                self.load_scheduled_processes()
+            
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Error al eliminar: {str(e)}")
+
+
+class ScheduleProcessDialog(QDialog):
+    """Dialog for creating a new scheduled process"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Programar Proceso")
+        self.setMinimumWidth(500)
+        self.schedule_data = None
+        self.init_ui()
+        self.load_processes()
+    
+    def init_ui(self):
+        layout = QVBoxLayout()
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Process selection
+        layout.addWidget(QLabel("Proceso:"))
+        self.process_combo = QComboBox()
+        layout.addWidget(self.process_combo)
+        
+        # Parameters (same as ProcessRequestDialog)
+        params_group = QGroupBox("Parámetros")
+        params_layout = QVBoxLayout()
+        
+        params_layout.addWidget(QLabel("País *:"))
+        self.pais_edit = QLineEdit()
+        self.pais_edit.setPlaceholderText("Ej: Argentina")
+        params_layout.addWidget(self.pais_edit)
+        
+        params_layout.addWidget(QLabel("Ciudad *:"))
+        self.ciudad_edit = QLineEdit()
+        self.ciudad_edit.setPlaceholderText("Ej: Buenos Aires")
+        params_layout.addWidget(self.ciudad_edit)
+        
+        params_layout.addWidget(QLabel("Fecha Inicio *:"))
+        self.fecha_inicio_edit = QDateTimeEdit()
+        self.fecha_inicio_edit.setCalendarPopup(True)
+        self.fecha_inicio_edit.setDateTime(QDateTime.currentDateTime().addDays(-30))
+        self.fecha_inicio_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
+        params_layout.addWidget(self.fecha_inicio_edit)
+        
+        params_layout.addWidget(QLabel("Fecha Fin *:"))
+        self.fecha_fin_edit = QDateTimeEdit()
+        self.fecha_fin_edit.setCalendarPopup(True)
+        self.fecha_fin_edit.setDateTime(QDateTime.currentDateTime())
+        self.fecha_fin_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
+        params_layout.addWidget(self.fecha_fin_edit)
+        
+        params_group.setLayout(params_layout)
+        layout.addWidget(params_group)
+        
+        # Schedule type
+        schedule_group = QGroupBox("Tipo de Programación")
+        schedule_layout = QVBoxLayout()
+        
+        self.schedule_type_group = QButtonGroup()
+        self.daily_radio = QRadioButton("Diario")
+        self.daily_radio.setChecked(True)
+        self.daily_radio.toggled.connect(self.on_schedule_type_changed)
+        self.schedule_type_group.addButton(self.daily_radio, 0)
+        schedule_layout.addWidget(self.daily_radio)
+        
+        self.weekly_radio = QRadioButton("Semanal")
+        self.weekly_radio.toggled.connect(self.on_schedule_type_changed)
+        self.schedule_type_group.addButton(self.weekly_radio, 1)
+        schedule_layout.addWidget(self.weekly_radio)
+        
+        self.monthly_radio = QRadioButton("Mensual")
+        self.monthly_radio.toggled.connect(self.on_schedule_type_changed)
+        self.schedule_type_group.addButton(self.monthly_radio, 2)
+        schedule_layout.addWidget(self.monthly_radio)
+        
+        self.annual_radio = QRadioButton("Anual")
+        self.annual_radio.toggled.connect(self.on_schedule_type_changed)
+        self.schedule_type_group.addButton(self.annual_radio, 3)
+        schedule_layout.addWidget(self.annual_radio)
+        
+        schedule_group.setLayout(schedule_layout)
+        layout.addWidget(schedule_group)
+        
+        # Schedule configuration
+        self.config_widget = QWidget()
+        self.config_layout = QVBoxLayout()
+        self.config_widget.setLayout(self.config_layout)
+        layout.addWidget(self.config_widget)
+        
+        # Time selection (common to all types)
+        time_layout = QHBoxLayout()
+        time_layout.addWidget(QLabel("Hora:"))
+        self.time_edit = QTimeEdit()
+        self.time_edit.setTime(QTime(9, 0))
+        self.time_edit.setDisplayFormat("HH:mm")
+        time_layout.addWidget(self.time_edit)
+        time_layout.addStretch()
+        self.config_layout.addLayout(time_layout)
+        
+        # Update config widget for daily (default)
+        self.on_schedule_type_changed()
+        
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        cancel_btn = QPushButton("Cancelar")
+        cancel_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(cancel_btn)
+        create_btn = QPushButton("Programar")
+        create_btn.clicked.connect(self.create_schedule)
+        btn_layout.addWidget(create_btn)
+        layout.addLayout(btn_layout)
+        
+        self.setLayout(layout)
+    
+    def load_processes(self):
+        """Load available processes"""
+        try:
+            mongo_db = db_manager.get_mongo_db()
+            neo4j_driver = db_manager.get_neo4j_driver()
+            cassandra_session = db_manager.get_cassandra_session()
+            
+            process_repo = ProcessRepository(mongo_db, neo4j_driver)
+            measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
+            sensor_repo = SensorRepository(mongo_db)
+            user_repo = UserRepository(mongo_db, neo4j_driver)
+            invoice_repo = InvoiceRepository(mongo_db)
+            process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo)
+            
+            processes = process_service.get_all_processes(skip=0, limit=100)
+            
+            self.process_combo.clear()
+            for process in processes:
+                self.process_combo.addItem(process.nombre, process.id)
+        
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Error al cargar procesos: {str(e)}")
+    
+    def on_schedule_type_changed(self):
+        """Update configuration widget based on schedule type"""
+        # Clear existing config widgets (except time)
+        while self.config_layout.count() > 1:  # Keep time layout
+            item = self.config_layout.takeAt(1)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        if self.weekly_radio.isChecked():
+            # Weekly: day of week
+            day_layout = QHBoxLayout()
+            day_layout.addWidget(QLabel("Día de la semana:"))
+            self.day_combo = QComboBox()
+            self.day_combo.addItems(["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"])
+            day_layout.addWidget(self.day_combo)
+            day_layout.addStretch()
+            self.config_layout.addLayout(day_layout)
+        
+        elif self.monthly_radio.isChecked():
+            # Monthly: day of month
+            day_layout = QHBoxLayout()
+            day_layout.addWidget(QLabel("Día del mes (1-31):"))
+            self.day_spin = QSpinBox()
+            self.day_spin.setRange(1, 31)
+            self.day_spin.setValue(1)
+            day_layout.addWidget(self.day_spin)
+            day_layout.addStretch()
+            self.config_layout.addLayout(day_layout)
+        
+        elif self.annual_radio.isChecked():
+            # Annual: month and day
+            month_layout = QHBoxLayout()
+            month_layout.addWidget(QLabel("Mes:"))
+            self.month_combo = QComboBox()
+            self.month_combo.addItems([
+                "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+            ])
+            month_layout.addWidget(self.month_combo)
+            month_layout.addStretch()
+            self.config_layout.addLayout(month_layout)
+            
+            day_layout = QHBoxLayout()
+            day_layout.addWidget(QLabel("Día del mes (1-31):"))
+            self.annual_day_spin = QSpinBox()
+            self.annual_day_spin.setRange(1, 31)
+            self.annual_day_spin.setValue(1)
+            day_layout.addWidget(self.annual_day_spin)
+            day_layout.addStretch()
+            self.config_layout.addLayout(day_layout)
+    
+    def create_schedule(self):
+        """Create the scheduled process"""
+        try:
+            # Validate process selection
+            process_id = self.process_combo.currentData()
+            if not process_id:
+                QMessageBox.warning(self, "Error", "Por favor seleccione un proceso")
+                return
+            
+            # Validate parameters
+            pais = self.pais_edit.text().strip()
+            ciudad = self.ciudad_edit.text().strip()
+            
+            if not pais or not ciudad:
+                QMessageBox.warning(self, "Error", "Por favor complete todos los campos requeridos")
+                return
+            
+            fecha_inicio = self.fecha_inicio_edit.dateTime().toPyDateTime()
+            fecha_fin = self.fecha_fin_edit.dateTime().toPyDateTime()
+            
+            if fecha_inicio >= fecha_fin:
+                QMessageBox.warning(self, "Error", "La fecha de inicio debe ser anterior a la fecha de fin")
+                return
+            
+            # Build parameters
+            parametros = {
+                "pais": pais,
+                "ciudad": ciudad,
+                "fecha_inicio": fecha_inicio.isoformat(),
+                "fecha_fin": fecha_fin.isoformat()
+            }
+            
+            # Determine schedule type
+            if self.daily_radio.isChecked():
+                schedule_type = ScheduleType.DAILY
+                schedule_config = {}
+            elif self.weekly_radio.isChecked():
+                schedule_type = ScheduleType.WEEKLY
+                day_of_week = self.day_combo.currentIndex()  # 0=Monday, 6=Sunday
+                schedule_config = {"day_of_week": day_of_week}
+            elif self.monthly_radio.isChecked():
+                schedule_type = ScheduleType.MONTHLY
+                day_of_month = self.day_spin.value()
+                schedule_config = {"day_of_month": day_of_month}
+            else:  # annual
+                schedule_type = ScheduleType.ANNUAL
+                month = self.month_combo.currentIndex() + 1  # 1-12
+                day_of_month = self.annual_day_spin.value()
+                schedule_config = {"month": month, "day_of_month": day_of_month}
+            
+            # Get time
+            time = self.time_edit.time()
+            schedule_config["hour"] = time.hour()
+            schedule_config["minute"] = time.minute()
+            
+            # Create schedule
+            schedule_data = ScheduledProcessCreate(
+                process_id=process_id,
+                parametros=parametros,
+                schedule_type=schedule_type,
+                schedule_config=schedule_config
+            )
+            
+            # Save to database
+            user_id = SessionManager.get_instance().get_user_id()
+            if not user_id:
+                QMessageBox.warning(self, "Error", "Usuario no conectado")
+                return
+            
+            mongo_db = db_manager.get_mongo_db()
+            schedule_repo = ScheduledProcessRepository(mongo_db)
+            schedule_service = ScheduledProcessService(schedule_repo)
+            
+            schedule_service.create_schedule(user_id, schedule_data)
+            
+            QMessageBox.information(self, "Éxito", "Proceso programado correctamente")
+            self.accept()
+        
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al programar proceso: {str(e)}")
+
+
+class EditScheduleDialog(ScheduleProcessDialog):
+    """Dialog for editing an existing scheduled process"""
+    
+    def __init__(self, schedule, parent=None):
+        self.schedule = schedule
+        super().__init__(parent)
+        self.setWindowTitle("Editar Proceso Programado")
+        self.load_schedule_data()
+    
+    def load_schedule_data(self):
+        """Load existing schedule data into the form"""
+        # Load process
+        mongo_db = db_manager.get_mongo_db()
+        neo4j_driver = db_manager.get_neo4j_driver()
+        process_repo = ProcessRepository(mongo_db, neo4j_driver)
+        process = process_repo.get_process(self.schedule.process_id)
+        
+        if process:
+            index = self.process_combo.findData(process.id)
+            if index >= 0:
+                self.process_combo.setCurrentIndex(index)
+        
+        # Load parameters
+        if "pais" in self.schedule.parametros:
+            self.pais_edit.setText(str(self.schedule.parametros["pais"]))
+        if "ciudad" in self.schedule.parametros:
+            self.ciudad_edit.setText(str(self.schedule.parametros["ciudad"]))
+        if "fecha_inicio" in self.schedule.parametros:
+            try:
+                fecha_inicio = datetime.fromisoformat(self.schedule.parametros["fecha_inicio"].replace("Z", "+00:00"))
+                self.fecha_inicio_edit.setDateTime(QDateTime.fromPyDateTime(fecha_inicio))
+            except:
+                pass
+        if "fecha_fin" in self.schedule.parametros:
+            try:
+                fecha_fin = datetime.fromisoformat(self.schedule.parametros["fecha_fin"].replace("Z", "+00:00"))
+                self.fecha_fin_edit.setDateTime(QDateTime.fromPyDateTime(fecha_fin))
+            except:
+                pass
+        
+        # Load schedule type and config
+        if self.schedule.schedule_type == ScheduleType.DAILY:
+            self.daily_radio.setChecked(True)
+        elif self.schedule.schedule_type == ScheduleType.WEEKLY:
+            self.weekly_radio.setChecked(True)
+            self.on_schedule_type_changed()
+            if "day_of_week" in self.schedule.schedule_config:
+                self.day_combo.setCurrentIndex(self.schedule.schedule_config["day_of_week"])
+        elif self.schedule.schedule_type == ScheduleType.MONTHLY:
+            self.monthly_radio.setChecked(True)
+            self.on_schedule_type_changed()
+            if "day_of_month" in self.schedule.schedule_config:
+                self.day_spin.setValue(self.schedule.schedule_config["day_of_month"])
+        elif self.schedule.schedule_type == ScheduleType.ANNUAL:
+            self.annual_radio.setChecked(True)
+            self.on_schedule_type_changed()
+            if "month" in self.schedule.schedule_config:
+                self.month_combo.setCurrentIndex(self.schedule.schedule_config["month"] - 1)
+            if "day_of_month" in self.schedule.schedule_config:
+                self.annual_day_spin.setValue(self.schedule.schedule_config["day_of_month"])
+        
+        # Load time
+        hour = self.schedule.schedule_config.get("hour", 9)
+        minute = self.schedule.schedule_config.get("minute", 0)
+        self.time_edit.setTime(QTime(hour, minute))
+    
+    def create_schedule(self):
+        """Update the scheduled process"""
+        try:
+            # Validate process selection
+            process_id = self.process_combo.currentData()
+            if not process_id:
+                QMessageBox.warning(self, "Error", "Por favor seleccione un proceso")
+                return
+            
+            # Validate parameters
+            pais = self.pais_edit.text().strip()
+            ciudad = self.ciudad_edit.text().strip()
+            
+            if not pais or not ciudad:
+                QMessageBox.warning(self, "Error", "Por favor complete todos los campos requeridos")
+                return
+            
+            fecha_inicio = self.fecha_inicio_edit.dateTime().toPyDateTime()
+            fecha_fin = self.fecha_fin_edit.dateTime().toPyDateTime()
+            
+            if fecha_inicio >= fecha_fin:
+                QMessageBox.warning(self, "Error", "La fecha de inicio debe ser anterior a la fecha de fin")
+                return
+            
+            # Build parameters
+            parametros = {
+                "pais": pais,
+                "ciudad": ciudad,
+                "fecha_inicio": fecha_inicio.isoformat(),
+                "fecha_fin": fecha_fin.isoformat()
+            }
+            
+            # Determine schedule type
+            if self.daily_radio.isChecked():
+                schedule_type = ScheduleType.DAILY
+                schedule_config = {}
+            elif self.weekly_radio.isChecked():
+                schedule_type = ScheduleType.WEEKLY
+                day_of_week = self.day_combo.currentIndex()
+                schedule_config = {"day_of_week": day_of_week}
+            elif self.monthly_radio.isChecked():
+                schedule_type = ScheduleType.MONTHLY
+                day_of_month = self.day_spin.value()
+                schedule_config = {"day_of_month": day_of_month}
+            else:  # annual
+                schedule_type = ScheduleType.ANNUAL
+                month = self.month_combo.currentIndex() + 1
+                day_of_month = self.annual_day_spin.value()
+                schedule_config = {"month": month, "day_of_month": day_of_month}
+            
+            # Get time
+            time = self.time_edit.time()
+            schedule_config["hour"] = time.hour()
+            schedule_config["minute"] = time.minute()
+            
+            # Update schedule
+            update_data = ScheduledProcessUpdate(
+                parametros=parametros,
+                schedule_type=schedule_type,
+                schedule_config=schedule_config
+            )
+            
+            mongo_db = db_manager.get_mongo_db()
+            schedule_repo = ScheduledProcessRepository(mongo_db)
+            schedule_service = ScheduledProcessService(schedule_repo)
+            
+            schedule_service.update_schedule(self.schedule.id, update_data)
+            
+            QMessageBox.information(self, "Éxito", "Proceso programado actualizado correctamente")
+            self.accept()
+        
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al actualizar proceso programado: {str(e)}")
     

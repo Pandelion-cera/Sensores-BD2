@@ -17,6 +17,7 @@ from desktop_app.ui.alert_rules_widget import AlertRulesWidget
 from desktop_app.ui.messages_widget import MessagesWidget
 from desktop_app.ui.invoices_widget import InvoicesWidget
 from desktop_app.ui.processes_widget import ProcessesWidget
+from desktop_app.ui.groups_widget import GroupsWidget
 from pathlib import Path
 import logging
 import subprocess
@@ -84,6 +85,11 @@ class MainWindow(QMainWindow):
         # Processes tab
         self.processes_widget = ProcessesWidget()
         self.tabs.addTab(self.processes_widget, "Procesos")
+        
+        # Groups management tab (admin only)
+        if user_role == "administrador":
+            self.groups_widget = GroupsWidget()
+            self.tabs.addTab(self.groups_widget, "Grupos")
         
         layout.addWidget(self.tabs)
         
@@ -167,6 +173,8 @@ class MainWindow(QMainWindow):
             self.invoices_widget.load_invoices()
         elif current_widget == self.processes_widget:
             self.processes_widget.load_processes()
+        elif hasattr(self, 'groups_widget') and current_widget == self.groups_widget:
+            self.groups_widget.load_groups()
         self.status_bar.showMessage("Actualizado", 2000)
     
     def handle_logout(self):

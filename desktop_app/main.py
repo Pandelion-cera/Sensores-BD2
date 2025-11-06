@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt
 from desktop_app.core.database import db_manager
 from desktop_app.ui.login_window import LoginWindow
 from desktop_app.ui.main_window import MainWindow
+from desktop_app.background.scheduler_worker import SchedulerWorker
 
 # Configure logging to both file and console
 def setup_logging():
@@ -92,6 +93,11 @@ def main():
         )
         sys.exit(1)
     
+    # Start scheduler worker for scheduled processes
+    scheduler_worker = SchedulerWorker()
+    scheduler_worker.start()
+    logger.info("Scheduler worker started")
+    
     # Main application loop - allows returning to login after logout
     logout_requested = False
     
@@ -125,6 +131,10 @@ def main():
         # Otherwise, the window was closed normally, so exit the application
         if not logout_requested:
             break
+    
+    # Stop scheduler worker before exiting
+    scheduler_worker.stop()
+    logger.info("Scheduler worker stopped")
     
     sys.exit(0)
 
