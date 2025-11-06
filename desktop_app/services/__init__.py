@@ -4,6 +4,8 @@ from .user_service import UserService
 from .message_service import MessageService
 from .process_service import ProcessService
 from .invoice_service import InvoiceService
+from .payment_service import PaymentService
+from .account_service import AccountService
 from .alert_service import AlertService
 
 __all__ = [
@@ -13,6 +15,8 @@ __all__ = [
     "MessageService",
     "ProcessService",
     "InvoiceService",
+    "PaymentService",
+    "AccountService",
     "AlertService"
 ]
 

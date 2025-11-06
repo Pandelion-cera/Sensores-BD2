@@ -16,6 +16,7 @@ from desktop_app.repositories.sensor_repository import SensorRepository
 from desktop_app.repositories.measurement_repository import MeasurementRepository
 from desktop_app.repositories.alert_repository import AlertRepository
 from desktop_app.repositories.alert_rule_repository import AlertRuleRepository
+from desktop_app.repositories.user_repository import UserRepository
 from desktop_app.services.sensor_service import SensorService
 from desktop_app.services.alert_service import AlertService
 from desktop_app.services.alert_rule_service import AlertRuleService
@@ -255,11 +256,13 @@ class MeasurementsWidget(QWidget):
                 rule_repo = AlertRuleRepository(mongo_db)
                 alert_rule_service = AlertRuleService(rule_repo, alert_repo)
                 
+                user_repo = UserRepository(mongo_db, neo4j_driver)
                 sensor_service = SensorService(
                     sensor_repo, 
                     measurement_repo, 
                     alert_service,
-                    alert_rule_service
+                    alert_rule_service,
+                    user_repo=user_repo
                 )
                 
                 # Register the measurement
@@ -314,7 +317,9 @@ class MeasurementsWidget(QWidget):
             measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
             alert_repo = AlertRepository(mongo_db, redis_client)
             alert_service = AlertService(alert_repo)
-            sensor_service = SensorService(sensor_repo, measurement_repo, alert_service)
+            neo4j_driver = db_manager.get_neo4j_driver()
+            user_repo = UserRepository(mongo_db, neo4j_driver)
+            sensor_service = SensorService(sensor_repo, measurement_repo, alert_service, user_repo=user_repo)
             
             measurements = sensor_service.get_location_measurements(
                 pais=country,

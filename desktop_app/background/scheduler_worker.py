@@ -13,6 +13,8 @@ from desktop_app.repositories.measurement_repository import MeasurementRepositor
 from desktop_app.repositories.sensor_repository import SensorRepository
 from desktop_app.repositories.user_repository import UserRepository
 from desktop_app.repositories.invoice_repository import InvoiceRepository
+from desktop_app.repositories.account_repository import AccountRepository
+from desktop_app.services.account_service import AccountService
 from desktop_app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -95,15 +97,24 @@ class SchedulerWorker:
             sensor_repo = SensorRepository(mongo_db)
             user_repo = UserRepository(mongo_db, neo4j_driver)
             invoice_repo = InvoiceRepository(mongo_db)
+            account_repo = AccountRepository(mongo_db)
+            account_service = AccountService(account_repo)
             
             # Initialize services
             schedule_service = ScheduledProcessService(schedule_repo)
+            redis_client = db_manager.get_redis_client()
+            from desktop_app.repositories.alert_repository import AlertRepository
+            from desktop_app.services.alert_service import AlertService
+            alert_repo = AlertRepository(mongo_db, redis_client)
+            alert_service = AlertService(alert_repo)
             process_service = ProcessService(
                 process_repo,
                 measurement_repo,
                 sensor_repo,
                 user_repo,
-                invoice_repo
+                invoice_repo,
+                account_service,
+                alert_service
             )
             scheduler_service = ProcessSchedulerService(
                 schedule_repo,

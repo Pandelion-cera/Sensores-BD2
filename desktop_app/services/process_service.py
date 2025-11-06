@@ -8,10 +8,13 @@ from desktop_app.repositories.sensor_repository import SensorRepository
 from desktop_app.repositories.user_repository import UserRepository
 from desktop_app.repositories.invoice_repository import InvoiceRepository
 from desktop_app.services.invoice_service import InvoiceService
+from desktop_app.services.account_service import AccountService
+from desktop_app.services.alert_service import AlertService
 from desktop_app.models.process_models import (
     Process, ProcessCreate, ProcessRequest, ProcessRequestCreate,
     Execution, ExecutionCreate, ProcessStatus, ProcessType
 )
+from desktop_app.models.alert_models import AlertCreate, AlertType
 
 logger = logging.getLogger(__name__)
 
@@ -23,17 +26,20 @@ class ProcessService:
         measurement_repo: MeasurementRepository,
         sensor_repo: SensorRepository,
         user_repo: Optional[UserRepository] = None,
-        invoice_repo: Optional[InvoiceRepository] = None
+        invoice_repo: Optional[InvoiceRepository] = None,
+        account_service: Optional[AccountService] = None,
+        alert_service: Optional[AlertService] = None
     ):
         self.process_repo = process_repo
         self.measurement_repo = measurement_repo
         self.sensor_repo = sensor_repo
         self.user_repo = user_repo
         self.invoice_repo = invoice_repo
+        self.alert_service = alert_service
         # Initialize invoice service if invoice repo is provided
         self.invoice_service = None
         if invoice_repo:
-            self.invoice_service = InvoiceService(invoice_repo, process_repo)
+            self.invoice_service = InvoiceService(invoice_repo, process_repo, account_service)
     
     # Process Definition Management
     def create_process(self, process_data: ProcessCreate) -> Process:
@@ -200,6 +206,28 @@ class ProcessService:
                     logger.error(f"Failed to create invoice for user {request.user_id} after process execution: {invoice_error}", exc_info=True)
             else:
                 logger.debug("Invoice service not available, skipping invoice creation")
+            
+            # Create alert for the user about process execution
+            if self.alert_service:
+                try:
+                    process = self.process_repo.get_process(request.process_id)
+                    process_name = process.nombre if process else f"Proceso {request.process_id}"
+                    
+                    alert_data = AlertCreate(
+                        tipo=AlertType.PROCESS_EXECUTED,
+                        user_id=request.user_id,
+                        descripcion=f"El proceso '{process_name}' se ha ejecutado exitosamente. Puede ver los resultados en 'Mis Procesos'.",
+                        process_id=request.process_id,
+                        execution_id=execution.id,
+                        prioridad=2  # Prioridad media para notificaciones de procesos
+                    )
+                    self.alert_service.create_alert(alert_data)
+                    logger.info(f"Alert created for user {request.user_id} about process execution {execution.id}")
+                except Exception as alert_error:
+                    # Don't fail execution if alert creation fails
+                    logger.error(f"Failed to create alert for user {request.user_id} after process execution: {alert_error}", exc_info=True)
+            else:
+                logger.debug("Alert service not available, skipping alert creation")
             
             return execution
             

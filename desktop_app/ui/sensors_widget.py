@@ -15,6 +15,7 @@ from desktop_app.core.database import db_manager
 from desktop_app.repositories.sensor_repository import SensorRepository
 from desktop_app.repositories.measurement_repository import MeasurementRepository
 from desktop_app.repositories.alert_repository import AlertRepository
+from desktop_app.repositories.user_repository import UserRepository
 from desktop_app.services.sensor_service import SensorService
 from desktop_app.services.alert_service import AlertService
 from desktop_app.models.sensor_models import Sensor, SensorCreate, SensorUpdate, SensorStatus
@@ -223,7 +224,8 @@ class SensorMeasurementsDialog(QDialog):
             measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
             alert_repo = AlertRepository(mongo_db, redis_client)
             alert_service = AlertService(alert_repo)
-            sensor_service = SensorService(sensor_repo, measurement_repo, alert_service)
+            user_repo = UserRepository(mongo_db, neo4j_driver)
+            sensor_service = SensorService(sensor_repo, measurement_repo, alert_service, user_repo=user_repo)
             
             # Get measurements - try by MongoDB _id first
             measurements = sensor_service.get_sensor_measurements(
@@ -452,7 +454,8 @@ class SensorsWidget(QWidget):
                 measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
                 alert_repo = AlertRepository(mongo_db, redis_client)
                 alert_service = AlertService(alert_repo)
-                sensor_service = SensorService(sensor_repo, measurement_repo, alert_service)
+                user_repo = UserRepository(mongo_db, neo4j_driver)
+                sensor_service = SensorService(sensor_repo, measurement_repo, alert_service, user_repo=user_repo)
                 
                 sensor_service.create_sensor(sensor_data)
                 QMessageBox.information(self, "Éxito", "Sensor creado exitosamente")
@@ -468,9 +471,18 @@ class SensorsWidget(QWidget):
                 sensor_update = SensorUpdate(**data)
                 
                 mongo_db = db_manager.get_mongo_db()
-                sensor_repo = SensorRepository(mongo_db)
+                neo4j_driver = db_manager.get_neo4j_driver()
+                redis_client = db_manager.get_redis_client()
+                cassandra_session = db_manager.get_cassandra_session()
                 
-                sensor_repo.update(sensor.id, sensor_update)
+                sensor_repo = SensorRepository(mongo_db)
+                measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
+                alert_repo = AlertRepository(mongo_db, redis_client)
+                alert_service = AlertService(alert_repo)
+                user_repo = UserRepository(mongo_db, neo4j_driver)
+                sensor_service = SensorService(sensor_repo, measurement_repo, alert_service, user_repo=user_repo)
+                
+                sensor_service.update_sensor(sensor.id, sensor_update)
                 QMessageBox.information(self, "Éxito", "Sensor actualizado exitosamente")
                 self.load_sensors()
             except Exception as e:

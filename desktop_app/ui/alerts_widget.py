@@ -4,16 +4,21 @@ Alerts widget for viewing and managing alerts
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QMessageBox, QGroupBox,
-    QLineEdit, QComboBox, QDateEdit, QHeaderView, QAbstractItemView
+    QLineEdit, QComboBox, QDateEdit, QHeaderView, QAbstractItemView,
+    QDialog, QDialogButtonBox, QTextEdit, QFormLayout
 )
 from PyQt6.QtCore import Qt, QDate
+from PyQt6.QtGui import QColor
 from datetime import datetime
 from typing import Optional
 
 from desktop_app.core.database import db_manager
 from desktop_app.repositories.alert_repository import AlertRepository
+from desktop_app.repositories.sensor_repository import SensorRepository
+from desktop_app.repositories.process_repository import ProcessRepository
+from desktop_app.repositories.user_repository import UserRepository
 from desktop_app.services.alert_service import AlertService
-from desktop_app.models.alert_models import AlertStatus, AlertType
+from desktop_app.models.alert_models import Alert, AlertStatus, AlertType
 from desktop_app.utils.session_manager import SessionManager
 
 
@@ -44,12 +49,12 @@ class AlertsWidget(QWidget):
         row1 = QHBoxLayout()
         row1.addWidget(QLabel("Estado:"))
         self.status_filter = QComboBox()
-        self.status_filter.addItems(["", "activa", "resuelta", "reconocida"])
+        self.status_filter.addItems(["", "activa", "finalizada"])
         row1.addWidget(self.status_filter)
         
         row1.addWidget(QLabel("Tipo:"))
         self.type_filter = QComboBox()
-        self.type_filter.addItems(["", "sensor", "climatica", "umbral"])
+        self.type_filter.addItems(["", "sensor", "climatica", "umbral", "proceso_ejecutado"])
         row1.addWidget(self.type_filter)
         
         row1.addWidget(QLabel("ID Sensor:"))
@@ -105,10 +110,15 @@ class AlertsWidget(QWidget):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        # Connect double-click to show details
+        self.table.itemDoubleClicked.connect(self.show_alert_details)
         layout.addWidget(self.table)
         
         # Action buttons
         action_layout = QHBoxLayout()
+        details_btn = QPushButton("Ver Detalles")
+        details_btn.clicked.connect(self.show_selected_alert_details)
+        action_layout.addWidget(details_btn)
         resolve_btn = QPushButton("Marcar como Resuelta")
         resolve_btn.clicked.connect(self.resolve_selected_alert)
         action_layout.addWidget(resolve_btn)
@@ -137,7 +147,8 @@ class AlertsWidget(QWidget):
             status = AlertStatus(status_str) if status_str else None
             
             type_str = self.type_filter.currentText()
-            alert_type = AlertType(type_str) if type_str else None
+            # Convert to string for repository (it expects string, not enum)
+            tipo_str = type_str if type_str else None
             
             sensor_id = self.sensor_id_filter.text().strip() or None
             
@@ -146,12 +157,19 @@ class AlertsWidget(QWidget):
             start_date = datetime(start_qdate.year(), start_qdate.month(), start_qdate.day())
             end_date = datetime(end_qdate.year(), end_qdate.month(), end_qdate.day(), 23, 59, 59)
             
+            # Filter by user_id unless user is admin
+            user_id = None
+            user_role = self.session_manager.get_user_role()
+            if user_role != "administrador":
+                user_id = self.session_manager.get_user_id()
+            
             alerts = alert_service.get_all_alerts(
                 skip=0,
                 limit=1000,
                 estado=status,
-                tipo=alert_type,
+                tipo=tipo_str,
                 sensor_id=sensor_id,
+                user_id=user_id,
                 fecha_desde=start_date,
                 fecha_hasta=end_date
             )
@@ -161,12 +179,17 @@ class AlertsWidget(QWidget):
             total_count = len(alerts)
             self.stats_label.setText(f"Total: {total_count} alertas ({active_count} activas)")
             
+            # Store alerts for detail view
+            self.alerts = alerts
+            
             # Update table
             self.table.setRowCount(len(alerts))
             for row, alert in enumerate(alerts):
                 self.table.setItem(row, 0, QTableWidgetItem(str(alert.id)))
                 self.table.setItem(row, 1, QTableWidgetItem(alert.tipo.value if alert.tipo else ""))
-                self.table.setItem(row, 2, QTableWidgetItem(str(alert.sensor_id)))
+                # Show sensor_id or process_id depending on alert type
+                sensor_or_process = str(alert.sensor_id) if alert.sensor_id else (str(alert.process_id) if hasattr(alert, 'process_id') and alert.process_id else "N/A")
+                self.table.setItem(row, 2, QTableWidgetItem(sensor_or_process))
                 self.table.setItem(row, 3, QTableWidgetItem(alert.descripcion or ""))
                 self.table.setItem(row, 4, QTableWidgetItem(str(alert.valor) if alert.valor else ""))
                 self.table.setItem(row, 5, QTableWidgetItem(str(alert.umbral) if alert.umbral else ""))
@@ -185,7 +208,7 @@ class AlertsWidget(QWidget):
                     for col in range(8):
                         item = self.table.item(row, col)
                         if item:
-                            item.setBackground(Qt.GlobalColor.red.lighter(180))
+                            item.setBackground(QColor(Qt.GlobalColor.red).lighter(180))
                 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al cargar alertas: {str(e)}")
@@ -215,12 +238,188 @@ class AlertsWidget(QWidget):
                 
                 alert = alert_service.get_alert(alert_id)
                 if alert:
-                    from desktop_app.models.alert_models import AlertUpdate
-                    update = AlertUpdate(estado=AlertStatus.RESOLVED)
-                    alert_repo.update(alert_id, update)
+                    # Use update_status method with FINISHED status (resolved)
+                    alert_repo.update_status(alert_id, AlertStatus.FINISHED)
                     QMessageBox.information(self, "Éxito", "Alerta marcada como resuelta")
                     self.load_alerts()
                 else:
                     QMessageBox.warning(self, "Error", "Alerta no encontrada")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Error al resolver alerta: {str(e)}")
+    
+    def show_alert_details(self, item: QTableWidgetItem):
+        """Show alert details dialog (called on double-click)"""
+        row = item.row()
+        if row < 0 or row >= len(self.alerts):
+            return
+        
+        alert = self.alerts[row]
+        dialog = AlertDetailDialog(alert, self)
+        dialog.exec()
+    
+    def show_selected_alert_details(self):
+        """Show alert details dialog for selected row (called from button)"""
+        current_row = self.table.currentRow()
+        if current_row < 0:
+            QMessageBox.warning(self, "Error de Selección", "Por favor seleccione una alerta para ver sus detalles")
+            return
+        
+        if current_row >= len(self.alerts):
+            return
+        
+        alert = self.alerts[current_row]
+        dialog = AlertDetailDialog(alert, self)
+        dialog.exec()
+
+
+class AlertDetailDialog(QDialog):
+    """Dialog for showing alert details"""
+    
+    def __init__(self, alert: Alert, parent=None):
+        super().__init__(parent)
+        self.alert = alert
+        self.setWindowTitle(f"Detalles de Alerta #{alert.id}")
+        self.setMinimumWidth(500)
+        self.init_ui()
+    
+    def init_ui(self):
+        layout = QVBoxLayout()
+        
+        # Basic info
+        basic_group = QGroupBox("Información Básica")
+        basic_layout = QFormLayout()
+        
+        basic_layout.addRow("ID:", QLabel(str(self.alert.id)))
+        basic_layout.addRow("Tipo:", QLabel(self.alert.tipo.value if self.alert.tipo else "N/A"))
+        basic_layout.addRow("Estado:", QLabel(self.alert.estado.value if self.alert.estado else "N/A"))
+        
+        fecha_str = ""
+        if self.alert.fecha_hora:
+            if isinstance(self.alert.fecha_hora, datetime):
+                fecha_str = self.alert.fecha_hora.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                fecha_str = str(self.alert.fecha_hora)
+        basic_layout.addRow("Fecha y Hora:", QLabel(fecha_str))
+        
+        if self.alert.prioridad:
+            prioridad_label = QLabel(str(self.alert.prioridad))
+            # Color code by priority
+            if self.alert.prioridad >= 4:
+                prioridad_label.setStyleSheet("color: #e74c3c; font-weight: bold;")  # Red for high priority
+            elif self.alert.prioridad == 3:
+                prioridad_label.setStyleSheet("color: #f39c12; font-weight: bold;")  # Orange for medium-high
+            else:
+                prioridad_label.setStyleSheet("color: #27ae60;")  # Green for low-medium
+            basic_layout.addRow("Prioridad:", prioridad_label)
+        
+        basic_group.setLayout(basic_layout)
+        layout.addWidget(basic_group)
+        
+        # Description
+        desc_group = QGroupBox("Descripción")
+        desc_layout = QVBoxLayout()
+        desc_label = QLabel(self.alert.descripcion or "Sin descripción")
+        desc_label.setWordWrap(True)
+        desc_layout.addWidget(desc_label)
+        desc_group.setLayout(desc_layout)
+        layout.addWidget(desc_group)
+        
+        # Sensor/Process info
+        if self.alert.sensor_id:
+            sensor_group = QGroupBox("Información del Sensor")
+            sensor_layout = QFormLayout()
+            sensor_layout.addRow("ID Sensor:", QLabel(str(self.alert.sensor_id)))
+            
+            # Try to get sensor details
+            try:
+                mongo_db = db_manager.get_mongo_db()
+                sensor_repo = SensorRepository(mongo_db)
+                sensor = sensor_repo.get_by_sensor_id(self.alert.sensor_id)
+                if sensor:
+                    sensor_layout.addRow("Nombre:", QLabel(sensor.nombre))
+                    sensor_layout.addRow("Ubicación:", QLabel(f"{sensor.ciudad}, {sensor.pais}"))
+                    sensor_layout.addRow("Estado:", QLabel(sensor.estado.value if sensor.estado else "N/A"))
+            except:
+                pass
+            
+            sensor_group.setLayout(sensor_layout)
+            layout.addWidget(sensor_group)
+        
+        if hasattr(self.alert, 'process_id') and self.alert.process_id:
+            process_group = QGroupBox("Información del Proceso")
+            process_layout = QFormLayout()
+            process_layout.addRow("ID Proceso:", QLabel(str(self.alert.process_id)))
+            
+            if hasattr(self.alert, 'execution_id') and self.alert.execution_id:
+                process_layout.addRow("ID Ejecución:", QLabel(str(self.alert.execution_id)))
+            
+            # Try to get process details
+            try:
+                mongo_db = db_manager.get_mongo_db()
+                neo4j_driver = db_manager.get_neo4j_driver()
+                process_repo = ProcessRepository(mongo_db, neo4j_driver)
+                process = process_repo.get_process(self.alert.process_id)
+                if process:
+                    process_layout.addRow("Nombre:", QLabel(process.nombre))
+                    process_layout.addRow("Tipo:", QLabel(process.tipo.value if process.tipo else "N/A"))
+                    process_layout.addRow("Costo:", QLabel(f"${process.costo:.2f}"))
+            except:
+                pass
+            
+            process_group.setLayout(process_layout)
+            layout.addWidget(process_group)
+        
+        # Measurement values (for threshold alerts)
+        if self.alert.valor is not None or self.alert.umbral is not None:
+            values_group = QGroupBox("Valores de Medición")
+            values_layout = QFormLayout()
+            
+            if self.alert.valor is not None:
+                values_layout.addRow("Valor Detectado:", QLabel(f"{self.alert.valor:.2f}"))
+            
+            if self.alert.umbral is not None:
+                values_layout.addRow("Umbral:", QLabel(f"{self.alert.umbral:.2f}"))
+            
+            values_group.setLayout(values_layout)
+            layout.addWidget(values_group)
+        
+        # Rule info (if applicable)
+        if hasattr(self.alert, 'rule_name') and self.alert.rule_name:
+            rule_group = QGroupBox("Información de la Regla")
+            rule_layout = QFormLayout()
+            rule_layout.addRow("Nombre de Regla:", QLabel(self.alert.rule_name))
+            
+            if hasattr(self.alert, 'rule_id') and self.alert.rule_id:
+                rule_layout.addRow("ID Regla:", QLabel(str(self.alert.rule_id)))
+            
+            rule_group.setLayout(rule_layout)
+            layout.addWidget(rule_group)
+        
+        # User info (if applicable)
+        if hasattr(self.alert, 'user_id') and self.alert.user_id:
+            user_group = QGroupBox("Usuario")
+            user_layout = QFormLayout()
+            
+            # Try to get user details
+            try:
+                mongo_db = db_manager.get_mongo_db()
+                neo4j_driver = db_manager.get_neo4j_driver()
+                user_repo = UserRepository(mongo_db, neo4j_driver)
+                user = user_repo.get_by_id(self.alert.user_id)
+                if user:
+                    user_layout.addRow("Nombre:", QLabel(user.nombre_completo))
+                    user_layout.addRow("Email:", QLabel(user.email))
+                else:
+                    user_layout.addRow("ID Usuario:", QLabel(str(self.alert.user_id)))
+            except:
+                user_layout.addRow("ID Usuario:", QLabel(str(self.alert.user_id)))
+            
+            user_group.setLayout(user_layout)
+            layout.addWidget(user_group)
+        
+        # Buttons
+        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        button_box.accepted.connect(self.accept)
+        layout.addWidget(button_box)
+        
+        self.setLayout(layout)

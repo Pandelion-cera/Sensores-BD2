@@ -33,7 +33,7 @@ class LoginWindow(QDialog):
         neo4j_driver = db_manager.get_neo4j_driver()
         
         user_repo = UserRepository(mongo_db, neo4j_driver)
-        session_repo = SessionRepository(redis_client)
+        session_repo = SessionRepository(redis_client, mongo_db)
         self.auth_service = AuthService(user_repo, session_repo)
         
         self.result_data: Optional[Dict[str, Any]] = None

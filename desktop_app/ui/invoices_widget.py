@@ -12,8 +12,10 @@ from datetime import datetime
 
 from desktop_app.core.database import db_manager
 from desktop_app.repositories.invoice_repository import InvoiceRepository
+from desktop_app.repositories.account_repository import AccountRepository
 from desktop_app.repositories.process_repository import ProcessRepository
 from desktop_app.services.invoice_service import InvoiceService
+from desktop_app.services.account_service import AccountService
 from desktop_app.utils.session_manager import SessionManager
 from desktop_app.models.invoice_models import InvoiceStatus
 
@@ -77,8 +79,10 @@ class InvoicesWidget(QWidget):
             neo4j_driver = db_manager.get_neo4j_driver()
             
             invoice_repo = InvoiceRepository(mongo_db)
+            account_repo = AccountRepository(mongo_db)
+            account_service = AccountService(account_repo)
             process_repo = ProcessRepository(mongo_db, neo4j_driver)
-            invoice_service = InvoiceService(invoice_repo, process_repo)
+            invoice_service = InvoiceService(invoice_repo, process_repo, account_service)
             
             # Load invoices
             invoices = invoice_service.get_user_invoices(user_id, skip=0, limit=100)
@@ -120,7 +124,7 @@ class InvoicesWidget(QWidget):
                             item.setBackground(light_yellow)
             
             # Load account
-            account = invoice_service.get_user_account(user_id)
+            account = account_service.get_account(user_id)
             if account:
                 self.account_label.setText(
                     f"Saldo Actual: ${account.saldo:.2f} | "

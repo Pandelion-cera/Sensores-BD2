@@ -13,7 +13,7 @@ from datetime import datetime
 from desktop_app.core.database import db_manager
 from desktop_app.repositories.group_repository import GroupRepository
 from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.repositories.invoice_repository import InvoiceRepository
+from desktop_app.repositories.account_repository import AccountRepository
 from desktop_app.services.user_service import UserService
 from desktop_app.models.group_models import Group, GroupCreate
 from desktop_app.utils.session_manager import SessionManager
@@ -220,8 +220,8 @@ class CreateGroupDialog(QDialog):
             neo4j_driver = db_manager.get_neo4j_driver()
             
             user_repo = UserRepository(mongo_db, neo4j_driver)
-            invoice_repo = InvoiceRepository(mongo_db)
-            user_service = UserService(user_repo, invoice_repo)
+            account_repo = AccountRepository(mongo_db)
+            user_service = UserService(user_repo, account_repo)
             
             users = user_service.get_all_users(skip=0, limit=200)
             
@@ -377,8 +377,8 @@ class ManageGroupDialog(QDialog):
             neo4j_driver = db_manager.get_neo4j_driver()
             
             user_repo = UserRepository(mongo_db, neo4j_driver)
-            invoice_repo = InvoiceRepository(mongo_db)
-            user_service = UserService(user_repo, invoice_repo)
+            account_repo = AccountRepository(mongo_db)
+            user_service = UserService(user_repo, account_repo)
             
             users = user_service.get_all_users(skip=0, limit=200)
             

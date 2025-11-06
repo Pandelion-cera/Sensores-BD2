@@ -4,19 +4,17 @@ from pymongo.database import Database
 from datetime import datetime
 
 from desktop_app.models.invoice_models import (
-    Invoice, InvoiceCreate, Payment, PaymentCreate,
-    Account, AccountResponse, InvoiceStatus, Movement
+    Invoice, InvoiceCreate, InvoiceStatus
 )
 
 
 class InvoiceRepository:
+    """Repository for invoice operations only"""
+    
     def __init__(self, mongo_db: Database):
-        self.invoices_col = mongo_db["invoices"]
-        self.payments_col = mongo_db["payments"]
-        self.accounts_col = mongo_db["accounts"]
-        
-    # Invoice CRUD
-    def create_invoice(self, invoice_data: InvoiceCreate) -> Invoice:
+        self.collection = mongo_db["invoices"]
+    
+    def create(self, invoice_data: InvoiceCreate) -> Invoice:
         """Create a new invoice"""
         invoice_dict = invoice_data.model_dump(exclude_none=True)
         total = sum(item.subtotal for item in invoice_data.items)
@@ -27,151 +25,100 @@ class InvoiceRepository:
         if "fecha_emision" not in invoice_dict or invoice_dict["fecha_emision"] is None:
             invoice_dict["fecha_emision"] = datetime.utcnow()
         
-        result = self.invoices_col.insert_one(invoice_dict)
+        result = self.collection.insert_one(invoice_dict)
         invoice_dict["_id"] = str(result.inserted_id)
-        
-        # Update user account with charge
-        self.add_account_movement(
-            invoice_data.user_id,
-            "cargo",
-            total,
-            f"Factura #{invoice_dict['_id']}",
-            invoice_dict["_id"]
-        )
         
         return Invoice(**invoice_dict)
     
-    def get_invoice(self, invoice_id: str) -> Optional[Invoice]:
+    def get_by_id(self, invoice_id: str) -> Optional[Invoice]:
         """Get invoice by ID"""
         try:
-            invoice = self.invoices_col.find_one({"_id": ObjectId(invoice_id)})
+            invoice = self.collection.find_one({"_id": ObjectId(invoice_id)})
             if invoice:
                 invoice["_id"] = str(invoice["_id"])
+                # Ensure fecha_emision and fecha_vencimiento are datetime objects if they exist
+                if "fecha_emision" in invoice and invoice["fecha_emision"]:
+                    if isinstance(invoice["fecha_emision"], str):
+                        try:
+                            invoice["fecha_emision"] = datetime.fromisoformat(invoice["fecha_emision"].replace("Z", "+00:00"))
+                        except:
+                            pass
+                if "fecha_vencimiento" in invoice and invoice["fecha_vencimiento"]:
+                    if isinstance(invoice["fecha_vencimiento"], str):
+                        try:
+                            invoice["fecha_vencimiento"] = datetime.fromisoformat(invoice["fecha_vencimiento"].replace("Z", "+00:00"))
+                        except:
+                            pass
                 return Invoice(**invoice)
-        except:
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting invoice {invoice_id}: {e}")
             return None
         return None
     
-    def get_user_invoices(self, user_id: str, skip: int = 0, limit: int = 100) -> List[Invoice]:
+    def get_by_user(self, user_id: str, skip: int = 0, limit: int = 100) -> List[Invoice]:
         """Get all invoices for a user"""
         invoices = []
-        for invoice in self.invoices_col.find({"user_id": user_id}).sort("fecha_emision", -1).skip(skip).limit(limit):
-            invoice["_id"] = str(invoice["_id"])
-            invoices.append(Invoice(**invoice))
+        for invoice in self.collection.find({"user_id": user_id}).sort("fecha_emision", -1).skip(skip).limit(limit):
+            try:
+                invoice["_id"] = str(invoice["_id"])
+                # Ensure fecha_emision and fecha_vencimiento are datetime objects if they exist
+                if "fecha_emision" in invoice and invoice["fecha_emision"]:
+                    if isinstance(invoice["fecha_emision"], str):
+                        try:
+                            invoice["fecha_emision"] = datetime.fromisoformat(invoice["fecha_emision"].replace("Z", "+00:00"))
+                        except:
+                            pass
+                if "fecha_vencimiento" in invoice and invoice["fecha_vencimiento"]:
+                    if isinstance(invoice["fecha_vencimiento"], str):
+                        try:
+                            invoice["fecha_vencimiento"] = datetime.fromisoformat(invoice["fecha_vencimiento"].replace("Z", "+00:00"))
+                        except:
+                            pass
+                invoices.append(Invoice(**invoice))
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error parsing invoice {invoice.get('_id', 'unknown')}: {e}")
+                continue
         return invoices
     
-    def update_invoice_status(self, invoice_id: str, status: InvoiceStatus) -> bool:
+    def update_status(self, invoice_id: str, status: InvoiceStatus) -> bool:
         """Update invoice status"""
-        result = self.invoices_col.update_one(
-            {"_id": ObjectId(invoice_id)},
-            {"$set": {"estado": status}}
-        )
-        return result.modified_count > 0
-    
-    # Payment CRUD
-    def create_payment(self, invoice_id: str, payment_data: PaymentCreate) -> Payment:
-        """Create a payment record"""
-        payment_dict = {
-            "invoice_id": invoice_id,
-            "monto": payment_data.monto,
-            "metodo": payment_data.metodo
-        }
-        
-        result = self.payments_col.insert_one(payment_dict)
-        payment_dict["_id"] = str(result.inserted_id)
-        
-        # Update invoice status
-        self.update_invoice_status(invoice_id, InvoiceStatus.PAID)
-        
-        # Get invoice to update account
-        invoice = self.get_invoice(invoice_id)
-        if invoice:
-            self.add_account_movement(
-                invoice.user_id,
-                "abono",
-                payment_data.monto,
-                f"Pago factura #{invoice_id}",
-                payment_dict["_id"]
-            )
-        
-        return Payment(**payment_dict)
-    
-    def get_payment(self, payment_id: str) -> Optional[Payment]:
-        """Get payment by ID"""
         try:
-            payment = self.payments_col.find_one({"_id": ObjectId(payment_id)})
-            if payment:
-                payment["_id"] = str(payment["_id"])
-                return Payment(**payment)
+            result = self.collection.update_one(
+                {"_id": ObjectId(invoice_id)},
+                {"$set": {"estado": status}}
+            )
+            return result.modified_count > 0
         except:
-            return None
-        return None
+            return False
     
-    def get_invoice_payments(self, invoice_id: str) -> List[Payment]:
-        """Get all payments for an invoice"""
-        payments = []
-        for payment in self.payments_col.find({"invoice_id": invoice_id}):
-            payment["_id"] = str(payment["_id"])
-            payments.append(Payment(**payment))
-        return payments
-    
-    # Account CRUD
-    def get_or_create_account(self, user_id: str) -> Account:
-        """Get or create account for user"""
-        account = self.accounts_col.find_one({"user_id": user_id})
-        
-        if account:
-            account["_id"] = str(account["_id"])
-            return Account(**account)
-        
-        # Create new account
-        account_dict = {
-            "user_id": user_id,
-            "saldo": 0.0,
-            "movimientos": []
-        }
-        
-        result = self.accounts_col.insert_one(account_dict)
-        account_dict["_id"] = str(result.inserted_id)
-        
-        return Account(**account_dict)
-    
-    def add_account_movement(
-        self,
-        user_id: str,
-        tipo: str,
-        monto: float,
-        descripcion: str,
-        referencia_id: Optional[str] = None
-    ) -> bool:
-        """Add a movement to user account"""
-        account = self.get_or_create_account(user_id)
-        
-        movement = Movement(
-            fecha=datetime.utcnow(),
-            tipo=tipo,
-            monto=monto,
-            descripcion=descripcion,
-            referencia_id=referencia_id
-        )
-        
-        # Update balance
-        if tipo == "cargo":
-            new_balance = account.saldo - monto
-        else:  # abono
-            new_balance = account.saldo + monto
-        
-        result = self.accounts_col.update_one(
-            {"user_id": user_id},
-            {
-                "$set": {"saldo": new_balance},
-                "$push": {"movimientos": movement.model_dump()}
-            }
-        )
-        
-        return result.modified_count > 0
-    
-    def get_account(self, user_id: str) -> Optional[Account]:
-        """Get account for user"""
-        return self.get_or_create_account(user_id)
+    def get_all(self, skip: int = 0, limit: int = 100) -> List[Invoice]:
+        """Get all invoices"""
+        invoices = []
+        for invoice in self.collection.find({}).sort("fecha_emision", -1).skip(skip).limit(limit):
+            try:
+                invoice["_id"] = str(invoice["_id"])
+                # Ensure fecha_emision and fecha_vencimiento are datetime objects if they exist
+                if "fecha_emision" in invoice and invoice["fecha_emision"]:
+                    if isinstance(invoice["fecha_emision"], str):
+                        try:
+                            invoice["fecha_emision"] = datetime.fromisoformat(invoice["fecha_emision"].replace("Z", "+00:00"))
+                        except:
+                            pass
+                if "fecha_vencimiento" in invoice and invoice["fecha_vencimiento"]:
+                    if isinstance(invoice["fecha_vencimiento"], str):
+                        try:
+                            invoice["fecha_vencimiento"] = datetime.fromisoformat(invoice["fecha_vencimiento"].replace("Z", "+00:00"))
+                        except:
+                            pass
+                invoices.append(Invoice(**invoice))
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error parsing invoice {invoice.get('_id', 'unknown')}: {e}")
+                continue
+        return invoices
 

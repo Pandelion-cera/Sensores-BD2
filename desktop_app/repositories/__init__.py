@@ -6,7 +6,10 @@ from .message_repository import MessageRepository
 from .group_repository import GroupRepository
 from .process_repository import ProcessRepository
 from .invoice_repository import InvoiceRepository
+from .payment_repository import PaymentRepository
+from .account_repository import AccountRepository
 from .alert_repository import AlertRepository
+from .maintenance_repository import MaintenanceRepository
 
 __all__ = [
     "UserRepository",
@@ -17,5 +20,8 @@ __all__ = [
     "GroupRepository",
     "ProcessRepository",
     "InvoiceRepository",
-    "AlertRepository"
+    "PaymentRepository",
+    "AccountRepository",
+    "AlertRepository",
+    "MaintenanceRepository"
 ]

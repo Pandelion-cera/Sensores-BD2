@@ -4,10 +4,12 @@ from datetime import datetime, timedelta
 from desktop_app.repositories.sensor_repository import SensorRepository
 from desktop_app.repositories.measurement_repository import MeasurementRepository
 from desktop_app.repositories.alert_rule_repository import AlertRuleRepository
+from desktop_app.repositories.user_repository import UserRepository
 from desktop_app.models.sensor_models import Sensor, SensorCreate, SensorUpdate, SensorStatus
 from desktop_app.models.measurement_models import MeasurementCreate, MeasurementResponse
 from desktop_app.services.alert_service import AlertService
 from desktop_app.services.alert_rule_service import AlertRuleService
+from desktop_app.models.alert_models import AlertCreate, AlertType
 
 
 class SensorService:
@@ -16,12 +18,14 @@ class SensorService:
         sensor_repo: SensorRepository,
         measurement_repo: MeasurementRepository,
         alert_service: AlertService,
-        alert_rule_service: Optional[AlertRuleService] = None
+        alert_rule_service: Optional[AlertRuleService] = None,
+        user_repo: Optional[UserRepository] = None
     ):
         self.sensor_repo = sensor_repo
         self.measurement_repo = measurement_repo
         self.alert_service = alert_service
         self.alert_rule_service = alert_rule_service
+        self.user_repo = user_repo
     
     def create_sensor(self, sensor_data: SensorCreate) -> Sensor:
         """Create a new sensor"""
@@ -47,7 +51,49 @@ class SensorService:
     
     def update_sensor(self, sensor_id: str, sensor_update: SensorUpdate) -> Optional[Sensor]:
         """Update sensor"""
-        return self.sensor_repo.update(sensor_id, sensor_update)
+        # Get current sensor state before update
+        current_sensor = self.sensor_repo.get_by_id(sensor_id)
+        if not current_sensor:
+            return None
+        
+        # Update sensor
+        updated_sensor = self.sensor_repo.update(sensor_id, sensor_update)
+        
+        # Check if sensor status changed to FAILURE
+        if updated_sensor and sensor_update.estado == SensorStatus.FAILURE:
+            if current_sensor.estado != SensorStatus.FAILURE:
+                # Sensor just changed to failure - create alerts for technicians
+                self._notify_technicians_of_sensor_failure(updated_sensor)
+        
+        return updated_sensor
+    
+    def _notify_technicians_of_sensor_failure(self, sensor: Sensor):
+        """Create alerts for all technicians when a sensor fails"""
+        if not self.user_repo:
+            return
+        
+        try:
+            # Get all users with "tecnico" role
+            all_users = self.user_repo.get_all(skip=0, limit=1000)
+            technicians = [
+                user for user in all_users
+                if "tecnico" in self.user_repo.get_user_roles(user.id)
+            ]
+            
+            # Create alert for each technician
+            for technician in technicians:
+                alert_data = AlertCreate(
+                    tipo=AlertType.SENSOR_FAILURE,
+                    user_id=technician.id,
+                    sensor_id=sensor.sensor_id,
+                    descripcion=f"El sensor '{sensor.nombre}' en {sensor.ciudad}, {sensor.pais} ha cambiado a estado 'falla' y requiere atención.",
+                    prioridad=4  # Alta prioridad para fallas de sensores
+                )
+                self.alert_service.create_alert(alert_data)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error notifying technicians of sensor failure: {e}", exc_info=True)
     
     def delete_sensor(self, sensor_id: str) -> bool:
         """Delete sensor"""

@@ -18,6 +18,9 @@ class AlertRepository:
         """Create a new alert in MongoDB and publish to Redis Stream"""
         alert_dict = alert_data.model_dump()
         alert_dict["estado"] = AlertStatus.ACTIVE
+        # Explicitly set fecha_hora if not provided
+        if "fecha_hora" not in alert_dict or alert_dict["fecha_hora"] is None:
+            alert_dict["fecha_hora"] = datetime.utcnow()
         
         result = self.collection.insert_one(alert_dict)
         alert_dict["_id"] = str(result.inserted_id)
@@ -47,8 +50,18 @@ class AlertRepository:
             alert = self.collection.find_one({"_id": ObjectId(alert_id)})
             if alert:
                 alert["_id"] = str(alert["_id"])
+                # Ensure fecha_hora is a datetime object if it exists
+                if "fecha_hora" in alert and alert["fecha_hora"]:
+                    if isinstance(alert["fecha_hora"], str):
+                        try:
+                            alert["fecha_hora"] = datetime.fromisoformat(alert["fecha_hora"].replace("Z", "+00:00"))
+                        except:
+                            pass
                 return Alert(**alert)
-        except:
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error getting alert {alert_id}: {e}")
             return None
         return None
     
@@ -59,17 +72,21 @@ class AlertRepository:
         estado: Optional[AlertStatus] = None,
         sensor_id: Optional[str] = None,
         tipo: Optional[str] = None,
+        user_id: Optional[str] = None,
         fecha_desde: Optional[datetime] = None,
         fecha_hasta: Optional[datetime] = None
     ) -> List[Alert]:
         """Get all alerts with optional filters"""
         query = {}
         if estado:
-            query["estado"] = estado
+            # Convert enum to string value for MongoDB query
+            query["estado"] = estado.value if isinstance(estado, AlertStatus) else estado
         if sensor_id:
             query["sensor_id"] = sensor_id
         if tipo:
             query["tipo"] = tipo
+        if user_id:
+            query["user_id"] = user_id
         
         # Filtrar por rango de fechas
         if fecha_desde or fecha_hasta:
@@ -81,8 +98,23 @@ class AlertRepository:
         
         alerts = []
         for alert in self.collection.find(query).sort("fecha_hora", -1).skip(skip).limit(limit):
-            alert["_id"] = str(alert["_id"])
-            alerts.append(Alert(**alert))
+            try:
+                alert["_id"] = str(alert["_id"])
+                # Ensure fecha_hora is a datetime object if it exists
+                if "fecha_hora" in alert and alert["fecha_hora"]:
+                    if isinstance(alert["fecha_hora"], str):
+                        # Try to parse ISO format string
+                        try:
+                            alert["fecha_hora"] = datetime.fromisoformat(alert["fecha_hora"].replace("Z", "+00:00"))
+                        except:
+                            pass  # Keep as string if parsing fails
+                alerts.append(Alert(**alert))
+            except Exception as e:
+                # Skip alerts that can't be parsed, but log the error
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error parsing alert {alert.get('_id', 'unknown')}: {e}")
+                continue
         
         return alerts
     
@@ -136,9 +168,11 @@ class AlertRepository:
     
     def update_status(self, alert_id: str, status: AlertStatus) -> Optional[Alert]:
         """Update alert status"""
+        # Convert enum to string value for MongoDB
+        status_value = status.value if isinstance(status, AlertStatus) else status
         self.collection.update_one(
             {"_id": ObjectId(alert_id)},
-            {"$set": {"estado": status}}
+            {"$set": {"estado": status_value}}
         )
         
         return self.get_by_id(alert_id)

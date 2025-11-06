@@ -26,11 +26,12 @@ class AlertService:
         estado: Optional[AlertStatus] = None,
         sensor_id: Optional[str] = None,
         tipo: Optional[str] = None,
+        user_id: Optional[str] = None,
         fecha_desde: Optional[datetime] = None,
         fecha_hasta: Optional[datetime] = None
     ) -> List[Alert]:
         """Get all alerts with filters"""
-        return self.alert_repo.get_all(skip, limit, estado, sensor_id, tipo, fecha_desde, fecha_hasta)
+        return self.alert_repo.get_all(skip, limit, estado, sensor_id, tipo, user_id, fecha_desde, fecha_hasta)
     
     def get_alerts_by_location(
         self,

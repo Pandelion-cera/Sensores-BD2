@@ -1,7 +1,7 @@
 from typing import Optional, List
 
 from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.repositories.invoice_repository import InvoiceRepository
+from desktop_app.repositories.account_repository import AccountRepository
 from desktop_app.models.user_models import User, UserUpdate, UserResponse
 from desktop_app.models.invoice_models import AccountResponse
 
@@ -10,10 +10,10 @@ class UserService:
     def __init__(
         self,
         user_repo: UserRepository,
-        invoice_repo: InvoiceRepository
+        account_repo: AccountRepository
     ):
         self.user_repo = user_repo
-        self.invoice_repo = invoice_repo
+        self.account_repo = account_repo
     
     def get_user(self, user_id: str) -> Optional[User]:
         """Get user by ID"""
@@ -51,9 +51,19 @@ class UserService:
     
     def get_user_account(self, user_id: str) -> AccountResponse:
         """Get user account information"""
-        account = self.invoice_repo.get_account(user_id)
+        account = self.account_repo.get_by_user(user_id)
+        if not account:
+            # Return empty account if not found
+            from datetime import datetime
+            return AccountResponse(
+                id="",
+                user_id=user_id,
+                saldo=0.0,
+                movimientos=[],
+                fecha_creacion=datetime.utcnow()
+            )
         return AccountResponse(
-            id=account.id,
+            id=account.id or "",
             user_id=account.user_id,
             saldo=account.saldo,
             movimientos=account.movimientos,

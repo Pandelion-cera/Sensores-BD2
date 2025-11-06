@@ -14,7 +14,7 @@ from desktop_app.core.database import db_manager
 from desktop_app.repositories.message_repository import MessageRepository
 from desktop_app.repositories.group_repository import GroupRepository
 from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.repositories.invoice_repository import InvoiceRepository
+from desktop_app.repositories.account_repository import AccountRepository
 from desktop_app.services.message_service import MessageService
 from desktop_app.services.user_service import UserService
 from desktop_app.models.message_models import MessageCreate, MessageType
@@ -295,8 +295,8 @@ class SendMessageDialog(QDialog):
             if self.private_radio.isChecked():
                 # Load all users for private messages
                 user_repo = UserRepository(mongo_db, neo4j_driver)
-                invoice_repo = InvoiceRepository(mongo_db)
-                user_service = UserService(user_repo, invoice_repo)
+                account_repo = AccountRepository(mongo_db)
+                user_service = UserService(user_repo, account_repo)
                 users = user_service.get_all_users(skip=0, limit=200)
                 
                 for user in users:

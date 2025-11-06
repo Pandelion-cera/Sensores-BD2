@@ -16,8 +16,10 @@ from desktop_app.ui.alerts_widget import AlertsWidget
 from desktop_app.ui.alert_rules_widget import AlertRulesWidget
 from desktop_app.ui.messages_widget import MessagesWidget
 from desktop_app.ui.invoices_widget import InvoicesWidget
+from desktop_app.ui.account_widget import AccountWidget
 from desktop_app.ui.processes_widget import ProcessesWidget
 from desktop_app.ui.groups_widget import GroupsWidget
+from desktop_app.ui.maintenance_widget import MaintenanceWidget
 from pathlib import Path
 import logging
 import subprocess
@@ -82,6 +84,10 @@ class MainWindow(QMainWindow):
         self.invoices_widget = InvoicesWidget()
         self.tabs.addTab(self.invoices_widget, "Facturas")
         
+        # Account tab
+        self.account_widget = AccountWidget()
+        self.tabs.addTab(self.account_widget, "Cuenta Corriente")
+        
         # Processes tab
         self.processes_widget = ProcessesWidget()
         self.tabs.addTab(self.processes_widget, "Procesos")
@@ -90,6 +96,11 @@ class MainWindow(QMainWindow):
         if user_role == "administrador":
             self.groups_widget = GroupsWidget()
             self.tabs.addTab(self.groups_widget, "Grupos")
+        
+        # Maintenance/Control de Funcionamiento tab (admin and technicians)
+        if user_role in ["administrador", "tecnico"]:
+            self.maintenance_widget = MaintenanceWidget()
+            self.tabs.addTab(self.maintenance_widget, "Control de Funcionamiento")
         
         layout.addWidget(self.tabs)
         
@@ -171,10 +182,14 @@ class MainWindow(QMainWindow):
             self.messages_widget.load_messages()
         elif current_widget == self.invoices_widget:
             self.invoices_widget.load_invoices()
+        elif current_widget == self.account_widget:
+            self.account_widget.load_account()
         elif current_widget == self.processes_widget:
             self.processes_widget.load_processes()
         elif hasattr(self, 'groups_widget') and current_widget == self.groups_widget:
             self.groups_widget.load_groups()
+        elif hasattr(self, 'maintenance_widget') and current_widget == self.maintenance_widget:
+            self.maintenance_widget.load_records()
         self.status_bar.showMessage("Actualizado", 2000)
     
     def handle_logout(self):
@@ -200,7 +215,7 @@ class MainWindow(QMainWindow):
                     neo4j_driver = db_manager.get_neo4j_driver()
                     
                     user_repo = UserRepository(mongo_db, neo4j_driver)
-                    session_repo = SessionRepository(redis_client)
+                    session_repo = SessionRepository(redis_client, mongo_db)
                     auth_service = AuthService(user_repo, session_repo)
                     auth_service.logout(session_id)
                 except:
