@@ -15,9 +15,11 @@ from app.core.database import db_manager
 from app.core.config import settings
 from app.repositories.sensor_repository import SensorRepository
 from app.repositories.measurement_repository import MeasurementRepository
+from app.repositories.alert_rule_repository import AlertRuleRepository
 from app.models.measurement_models import MeasurementCreate
 from app.models.sensor_models import SensorStatus
 from app.services.alert_service import AlertService
+from app.services.alert_rule_service import AlertRuleService
 from app.repositories.alert_repository import AlertRepository
 
 
@@ -87,7 +89,7 @@ def generate_humidity(temperature):
     return round(base_humidity, 2)
 
 
-def generate_measurements_batch(sensor_repo, measurement_repo, alert_service):
+def generate_measurements_batch(sensor_repo, measurement_repo, alert_service, alert_rule_service):
     """Generate one batch of measurements for all active sensors"""
     
     # Get all active sensors
@@ -126,6 +128,21 @@ def generate_measurements_batch(sensor_repo, measurement_repo, alert_service):
                 temperature,
                 humidity
             )
+            # Check alert rules
+            if alert_rule_service is not None:
+                try:
+                    rule_alerts = alert_rule_service.check_measurement_against_rules(
+                        sensor_id=sensor.sensor_id,
+                        pais=sensor.pais,
+                        ciudad=sensor.ciudad,
+                        region=None,
+                        temperatura=temperature,
+                        humedad=humidity,
+                        fecha=datetime.utcnow()
+                    )
+                    alerts.extend([ra["alert"] for ra in rule_alerts])
+                except Exception as rule_error:
+                    print(f"Error generating alert rule for sensor {sensor.nombre}: {rule_error}")
             
             count += 1
             
@@ -154,6 +171,8 @@ def main():
     measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
     alert_repo = AlertRepository(mongo_db, redis_client)
     alert_service = AlertService(alert_repo)
+    alert_rule_repo = AlertRuleRepository(mongo_db)
+    alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
     
     print(f"Configuration:")
     print(f"  Cassandra Keyspace: {settings.CASSANDRA_KEYSPACE}")
@@ -180,7 +199,7 @@ def main():
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             # Generate measurements for all sensors
-            count = generate_measurements_batch(sensor_repo, measurement_repo, alert_service)
+            count = generate_measurements_batch(sensor_repo, measurement_repo, alert_service, alert_rule_service)
             
             print(f"[{timestamp}] Iteration {iteration}: Generated {count} measurements")
             

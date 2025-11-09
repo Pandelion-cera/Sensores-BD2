@@ -6,10 +6,11 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QMessageBox, QTabWidget,
     QHeaderView, QAbstractItemView, QComboBox, QDialog,
     QLineEdit, QDateTimeEdit, QTextEdit, QGroupBox, QScrollArea,
-    QTimeEdit, QSpinBox, QRadioButton, QButtonGroup
+    QTimeEdit, QSpinBox, QRadioButton, QButtonGroup, QDoubleSpinBox, QCheckBox
 )
 from PyQt6.QtCore import Qt, QDateTime, QTime
 from datetime import datetime
+from typing import Any, Dict, Optional
 import json
 
 from desktop_app.core.database import db_manager
@@ -20,14 +21,16 @@ from desktop_app.repositories.user_repository import UserRepository
 from desktop_app.repositories.invoice_repository import InvoiceRepository
 from desktop_app.repositories.account_repository import AccountRepository
 from desktop_app.repositories.alert_repository import AlertRepository
+from desktop_app.repositories.alert_rule_repository import AlertRuleRepository
 from desktop_app.services.account_service import AccountService
 from desktop_app.services.alert_service import AlertService
+from desktop_app.services.alert_rule_service import AlertRuleService
 from desktop_app.repositories.scheduled_process_repository import ScheduledProcessRepository
 from desktop_app.services.process_service import ProcessService
 from desktop_app.services.scheduled_process_service import ScheduledProcessService
 from desktop_app.utils.session_manager import SessionManager
 from desktop_app.core.config import settings
-from desktop_app.models.process_models import ProcessRequestCreate, ProcessStatus, Process, Execution
+from desktop_app.models.process_models import ProcessRequestCreate, ProcessStatus, Process, Execution, ProcessType
 from desktop_app.models.scheduled_process_models import (
     ScheduledProcessCreate, ScheduledProcessUpdate, ScheduleType, ScheduleStatus
 )
@@ -40,54 +43,27 @@ class ProcessRequestDialog(QDialog):
         super().__init__(parent)
         self.process = process
         self.setWindowTitle(f"Solicitar Proceso: {process.nombre}")
-        self.setMinimumWidth(450)
-        self.parametros = {}
+        self.setMinimumWidth(500)
+        self.parametros: Dict[str, Any] = {}
+        self.is_alert_config = process.tipo == ProcessType.ALERT_CONFIG
+        self._temp_sentinel = -999.0
+        self._hum_sentinel = -1.0
         self.init_ui()
     
     def init_ui(self):
         layout = QVBoxLayout()
         layout.setSpacing(10)
         
-        # Process description
         desc_label = QLabel(self.process.descripcion or "")
         desc_label.setWordWrap(True)
         desc_label.setStyleSheet("color: gray; padding: 5px;")
         layout.addWidget(desc_label)
         
-        # País (Country)
-        layout.addWidget(QLabel("País *:"))
-        self.pais_edit = QLineEdit()
-        self.pais_edit.setPlaceholderText("Ej: Argentina")
-        layout.addWidget(self.pais_edit)
+        if self.is_alert_config:
+            self._init_alert_config_ui(layout)
+        else:
+            self._init_default_ui(layout)
         
-        # Ciudad (City)
-        layout.addWidget(QLabel("Ciudad *:"))
-        self.ciudad_edit = QLineEdit()
-        self.ciudad_edit.setPlaceholderText("Ej: Buenos Aires")
-        layout.addWidget(self.ciudad_edit)
-        
-        # Fecha Inicio (Start Date)
-        layout.addWidget(QLabel("Fecha Inicio *:"))
-        self.fecha_inicio_edit = QDateTimeEdit()
-        self.fecha_inicio_edit.setCalendarPopup(True)
-        self.fecha_inicio_edit.setDateTime(QDateTime.currentDateTime().addDays(-30))
-        self.fecha_inicio_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
-        layout.addWidget(self.fecha_inicio_edit)
-        
-        # Fecha Fin (End Date)
-        layout.addWidget(QLabel("Fecha Fin *:"))
-        self.fecha_fin_edit = QDateTimeEdit()
-        self.fecha_fin_edit.setCalendarPopup(True)
-        self.fecha_fin_edit.setDateTime(QDateTime.currentDateTime())
-        self.fecha_fin_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
-        layout.addWidget(self.fecha_fin_edit)
-        
-        # Info label
-        info_label = QLabel("* Campos requeridos")
-        info_label.setStyleSheet("color: gray; font-size: 10px;")
-        layout.addWidget(info_label)
-        
-        # Buttons
         btn_layout = QHBoxLayout()
         save_btn = QPushButton("Solicitar")
         save_btn.clicked.connect(self.accept)
@@ -99,40 +75,267 @@ class ProcessRequestDialog(QDialog):
         
         self.setLayout(layout)
     
+    def _init_default_ui(self, layout: QVBoxLayout):
+        layout.addWidget(QLabel("País *:"))
+        self.pais_edit = QLineEdit()
+        self.pais_edit.setPlaceholderText("Ej: Argentina")
+        layout.addWidget(self.pais_edit)
+        
+        layout.addWidget(QLabel("Ciudad *:"))
+        self.ciudad_edit = QLineEdit()
+        self.ciudad_edit.setPlaceholderText("Ej: Buenos Aires")
+        layout.addWidget(self.ciudad_edit)
+        
+        layout.addWidget(QLabel("Fecha Inicio *:"))
+        self.fecha_inicio_edit = QDateTimeEdit()
+        self.fecha_inicio_edit.setCalendarPopup(True)
+        self.fecha_inicio_edit.setDateTime(QDateTime.currentDateTime().addDays(-30))
+        self.fecha_inicio_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
+        layout.addWidget(self.fecha_inicio_edit)
+        
+        layout.addWidget(QLabel("Fecha Fin *:"))
+        self.fecha_fin_edit = QDateTimeEdit()
+        self.fecha_fin_edit.setCalendarPopup(True)
+        self.fecha_fin_edit.setDateTime(QDateTime.currentDateTime())
+        self.fecha_fin_edit.setDisplayFormat("yyyy-MM-dd HH:mm")
+        layout.addWidget(self.fecha_fin_edit)
+        
+        info_label = QLabel("* Campos requeridos")
+        info_label.setStyleSheet("color: gray; font-size: 10px;")
+        layout.addWidget(info_label)
+    
+    def _init_alert_config_ui(self, layout: QVBoxLayout):
+        layout.addWidget(QLabel("Nombre de la Regla *:"))
+        self.rule_name_edit = QLineEdit()
+        self.rule_name_edit.setPlaceholderText("Ej: Alerta altas temperaturas matutinas")
+        layout.addWidget(self.rule_name_edit)
+        
+        layout.addWidget(QLabel("Descripción *:"))
+        self.rule_desc_edit = QTextEdit()
+        self.rule_desc_edit.setMaximumHeight(90)
+        layout.addWidget(self.rule_desc_edit)
+        
+        thresholds_group = QGroupBox("Condiciones (al menos una)")
+        thresholds_layout = QVBoxLayout()
+        
+        temp_layout = QHBoxLayout()
+        temp_layout.addWidget(QLabel("Temperatura mínima:"))
+        self.temp_min_spin = QDoubleSpinBox()
+        self.temp_min_spin.setRange(self._temp_sentinel, 100.0)
+        self.temp_min_spin.setDecimals(2)
+        self.temp_min_spin.setSpecialValueText("No establecido")
+        self.temp_min_spin.setValue(self._temp_sentinel)
+        temp_layout.addWidget(self.temp_min_spin)
+        
+        temp_layout.addWidget(QLabel("Temperatura máxima:"))
+        self.temp_max_spin = QDoubleSpinBox()
+        self.temp_max_spin.setRange(self._temp_sentinel, 100.0)
+        self.temp_max_spin.setDecimals(2)
+        self.temp_max_spin.setSpecialValueText("No establecido")
+        self.temp_max_spin.setValue(self._temp_sentinel)
+        temp_layout.addWidget(self.temp_max_spin)
+        thresholds_layout.addLayout(temp_layout)
+        
+        hum_layout = QHBoxLayout()
+        hum_layout.addWidget(QLabel("Humedad mínima:"))
+        self.hum_min_spin = QDoubleSpinBox()
+        self.hum_min_spin.setRange(self._hum_sentinel, 100.0)
+        self.hum_min_spin.setDecimals(2)
+        self.hum_min_spin.setSpecialValueText("No establecido")
+        self.hum_min_spin.setValue(self._hum_sentinel)
+        hum_layout.addWidget(self.hum_min_spin)
+        
+        hum_layout.addWidget(QLabel("Humedad máxima:"))
+        self.hum_max_spin = QDoubleSpinBox()
+        self.hum_max_spin.setRange(self._hum_sentinel, 100.0)
+        self.hum_max_spin.setDecimals(2)
+        self.hum_max_spin.setSpecialValueText("No establecido")
+        self.hum_max_spin.setValue(self._hum_sentinel)
+        hum_layout.addWidget(self.hum_max_spin)
+        thresholds_layout.addLayout(hum_layout)
+        
+        thresholds_group.setLayout(thresholds_layout)
+        layout.addWidget(thresholds_group)
+        
+        location_group = QGroupBox("Ámbito de Aplicación *")
+        location_layout = QVBoxLayout()
+        
+        scope_row = QHBoxLayout()
+        scope_row.addWidget(QLabel("Ámbito:"))
+        self.scope_combo = QComboBox()
+        self.scope_combo.addItems(["ciudad", "region", "pais"])
+        self.scope_combo.currentTextChanged.connect(self._update_scope_visibility)
+        scope_row.addWidget(self.scope_combo)
+        scope_row.addStretch()
+        location_layout.addLayout(scope_row)
+        
+        location_layout.addWidget(QLabel("País:"))
+        self.rule_country_edit = QLineEdit()
+        self.rule_country_edit.setPlaceholderText("Ej: Argentina")
+        location_layout.addWidget(self.rule_country_edit)
+        
+        self.city_label = QLabel("Ciudad:")
+        self.rule_city_edit = QLineEdit()
+        self.rule_city_edit.setPlaceholderText("Ej: Buenos Aires")
+        location_layout.addWidget(self.city_label)
+        location_layout.addWidget(self.rule_city_edit)
+        
+        self.region_label = QLabel("Región:")
+        self.rule_region_edit = QLineEdit()
+        self.rule_region_edit.setPlaceholderText("Ej: Patagonia Sur")
+        location_layout.addWidget(self.region_label)
+        location_layout.addWidget(self.rule_region_edit)
+        
+        location_group.setLayout(location_layout)
+        layout.addWidget(location_group)
+        
+        dates_group = QGroupBox("Rango de Vigencia (Opcional)")
+        dates_layout = QVBoxLayout()
+        
+        start_row = QHBoxLayout()
+        self.use_start_date_checkbox = QCheckBox("Definir fecha de inicio")
+        self.alert_start_dt = QDateTimeEdit()
+        self.alert_start_dt.setCalendarPopup(True)
+        self.alert_start_dt.setDateTime(QDateTime.currentDateTime())
+        self.alert_start_dt.setDisplayFormat("yyyy-MM-dd HH:mm")
+        self.alert_start_dt.setEnabled(False)
+        self.use_start_date_checkbox.toggled.connect(self.alert_start_dt.setEnabled)
+        start_row.addWidget(self.use_start_date_checkbox)
+        start_row.addWidget(self.alert_start_dt)
+        dates_layout.addLayout(start_row)
+        
+        end_row = QHBoxLayout()
+        self.use_end_date_checkbox = QCheckBox("Definir fecha de fin")
+        self.alert_end_dt = QDateTimeEdit()
+        self.alert_end_dt.setCalendarPopup(True)
+        self.alert_end_dt.setDateTime(QDateTime.currentDateTime().addDays(30))
+        self.alert_end_dt.setDisplayFormat("yyyy-MM-dd HH:mm")
+        self.alert_end_dt.setEnabled(False)
+        self.use_end_date_checkbox.toggled.connect(self.alert_end_dt.setEnabled)
+        end_row.addWidget(self.use_end_date_checkbox)
+        end_row.addWidget(self.alert_end_dt)
+        dates_layout.addLayout(end_row)
+        
+        dates_group.setLayout(dates_layout)
+        layout.addWidget(dates_group)
+        
+        priority_row = QHBoxLayout()
+        priority_row.addWidget(QLabel("Prioridad (1-5):"))
+        self.priority_spin = QSpinBox()
+        self.priority_spin.setRange(1, 5)
+        self.priority_spin.setValue(3)
+        priority_row.addWidget(self.priority_spin)
+        priority_row.addStretch()
+        layout.addLayout(priority_row)
+        
+        info_label = QLabel("Las reglas creadas se asignarán a tu usuario y se aplicarán automáticamente a nuevas mediciones.")
+        info_label.setStyleSheet("color: gray; font-size: 11px;")
+        layout.addWidget(info_label)
+        
+        self._update_scope_visibility(self.scope_combo.currentText())
+    
+    def _update_scope_visibility(self, scope: str):
+        is_city = scope == "ciudad"
+        is_region = scope == "region"
+        
+        self.city_label.setVisible(is_city)
+        self.rule_city_edit.setVisible(is_city)
+        self.rule_city_edit.setEnabled(is_city)
+        
+        self.region_label.setVisible(is_region)
+        self.rule_region_edit.setVisible(is_region)
+        self.rule_region_edit.setEnabled(is_region)
+    
     def accept(self):
-        """Validate and accept the dialog"""
-        # Validate required fields
+        try:
+            if self.is_alert_config:
+                self._validate_alert_request()
+            else:
+                self._validate_default_request()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Error de Validación", str(exc))
+            return
+        
+        super().accept()
+    
+    def _validate_default_request(self) -> None:
         pais = self.pais_edit.text().strip()
         ciudad = self.ciudad_edit.text().strip()
-        
         if not pais:
-            QMessageBox.warning(self, "Error de Validación", "Por favor ingrese el país")
-            return
-        
+            raise ValueError("Por favor ingrese el país")
         if not ciudad:
-            QMessageBox.warning(self, "Error de Validación", "Por favor ingrese la ciudad")
-            return
+            raise ValueError("Por favor ingrese la ciudad")
         
-        # Get dates
         fecha_inicio = self.fecha_inicio_edit.dateTime().toPyDateTime()
         fecha_fin = self.fecha_fin_edit.dateTime().toPyDateTime()
-        
         if fecha_inicio >= fecha_fin:
-            QMessageBox.warning(self, "Error de Validación", "La fecha de inicio debe ser anterior a la fecha de fin")
-            return
+            raise ValueError("La fecha de inicio debe ser anterior a la fecha de fin")
         
-        # Build parameters dict
         self.parametros = {
             "pais": pais,
             "ciudad": ciudad,
             "fecha_inicio": fecha_inicio.isoformat(),
             "fecha_fin": fecha_fin.isoformat()
         }
+    
+    def _validate_alert_request(self) -> None:
+        nombre = self.rule_name_edit.text().strip()
+        descripcion = self.rule_desc_edit.toPlainText().strip()
+        if len(nombre) < 3:
+            raise ValueError("El nombre de la regla debe tener al menos 3 caracteres")
+        if len(descripcion) < 10:
+            raise ValueError("La descripción debe tener al menos 10 caracteres")
         
-        super().accept()
+        def _get_value(spin: QDoubleSpinBox, sentinel: float) -> Optional[float]:
+            value = round(spin.value(), 2)
+            return None if abs(value - sentinel) < 1e-6 else value
+        
+        temp_min = _get_value(self.temp_min_spin, self._temp_sentinel)
+        temp_max = _get_value(self.temp_max_spin, self._temp_sentinel)
+        hum_min = _get_value(self.hum_min_spin, self._hum_sentinel)
+        hum_max = _get_value(self.hum_max_spin, self._hum_sentinel)
+        
+        if all(value is None for value in (temp_min, temp_max, hum_min, hum_max)):
+            raise ValueError("Debe definir al menos una condición de temperatura u humedad")
+        if temp_min is not None and temp_max is not None and temp_min > temp_max:
+            raise ValueError("La temperatura mínima no puede ser mayor que la máxima")
+        if hum_min is not None and hum_max is not None and hum_min > hum_max:
+            raise ValueError("La humedad mínima no puede ser mayor que la máxima")
+        
+        scope = self.scope_combo.currentText()
+        pais = self.rule_country_edit.text().strip()
+        ciudad = self.rule_city_edit.text().strip()
+        region = self.rule_region_edit.text().strip()
+        
+        if not pais:
+            raise ValueError("Debe indicar el país donde aplica la regla")
+        if scope == "ciudad" and not ciudad:
+            raise ValueError("Debe indicar la ciudad para el ámbito 'ciudad'")
+        if scope == "region" and not region:
+            raise ValueError("Debe indicar la región para el ámbito 'region'")
+        
+        fecha_inicio = self.alert_start_dt.dateTime().toPyDateTime() if self.use_start_date_checkbox.isChecked() else None
+        fecha_fin = self.alert_end_dt.dateTime().toPyDateTime() if self.use_end_date_checkbox.isChecked() else None
+        if fecha_inicio and fecha_fin and fecha_inicio > fecha_fin:
+            raise ValueError("La fecha de inicio no puede ser posterior a la fecha de fin")
+        
+        self.parametros = {
+            "nombre": nombre,
+            "descripcion": descripcion,
+            "temp_min": temp_min,
+            "temp_max": temp_max,
+            "humidity_min": hum_min,
+            "humidity_max": hum_max,
+            "location_scope": scope,
+            "pais": pais,
+            "ciudad": ciudad if scope == "ciudad" else "",
+            "region": region if scope == "region" else "",
+            "fecha_inicio": fecha_inicio.isoformat() if fecha_inicio else None,
+            "fecha_fin": fecha_fin.isoformat() if fecha_fin else None,
+            "prioridad": self.priority_spin.value()
+        }
     
     def get_parametros(self) -> dict:
-        """Get the collected parameters"""
         return self.parametros
 
 
@@ -609,7 +812,18 @@ class ProcessesWidget(QWidget):
             redis_client = db_manager.get_redis_client()
             alert_repo = AlertRepository(mongo_db, redis_client)
             alert_service = AlertService(alert_repo)
-            process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo, account_service, alert_service)
+            alert_rule_repo = AlertRuleRepository(mongo_db)
+            alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
+            process_service = ProcessService(
+                process_repo,
+                measurement_repo,
+                sensor_repo,
+                user_repo,
+                invoice_repo,
+                account_service,
+                alert_service,
+                alert_rule_service
+            )
             
             # Load available processes
             processes = process_service.get_all_processes(skip=0, limit=100)
@@ -699,7 +913,18 @@ class ProcessesWidget(QWidget):
             redis_client = db_manager.get_redis_client()
             alert_repo = AlertRepository(mongo_db, redis_client)
             alert_service = AlertService(alert_repo)
-            process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo, account_service, alert_service)
+            alert_rule_repo = AlertRuleRepository(mongo_db)
+            alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
+            process_service = ProcessService(
+                process_repo,
+                measurement_repo,
+                sensor_repo,
+                user_repo,
+                invoice_repo,
+                account_service,
+                alert_service,
+                alert_rule_service
+            )
             
             # Get status filter
             status_filter = None
@@ -803,7 +1028,21 @@ class ProcessesWidget(QWidget):
             sensor_repo = SensorRepository(mongo_db)
             user_repo = UserRepository(mongo_db, neo4j_driver)
             invoice_repo = InvoiceRepository(mongo_db)
-            process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo)
+            redis_client = db_manager.get_redis_client()
+            alert_repo = AlertRepository(mongo_db, redis_client)
+            alert_service = AlertService(alert_repo)
+            alert_rule_repo = AlertRuleRepository(mongo_db)
+            alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
+            process_service = ProcessService(
+                process_repo,
+                measurement_repo,
+                sensor_repo,
+                user_repo,
+                invoice_repo,
+                None,
+                alert_service,
+                alert_rule_service
+            )
             
             request_data = ProcessRequestCreate(
                 process_id=process_id,
@@ -855,7 +1094,18 @@ class ProcessesWidget(QWidget):
                 redis_client = db_manager.get_redis_client()
                 alert_repo = AlertRepository(mongo_db, redis_client)
                 alert_service = AlertService(alert_repo)
-                process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo, None, alert_service)
+                alert_rule_repo = AlertRuleRepository(mongo_db)
+                alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
+                process_service = ProcessService(
+                    process_repo,
+                    measurement_repo,
+                    sensor_repo,
+                    user_repo,
+                    invoice_repo,
+                    None,
+                    alert_service,
+                    alert_rule_service
+                )
                 
                 execution = process_service.execute_process(request_id)
                 
@@ -951,7 +1201,18 @@ class ProcessesWidget(QWidget):
             redis_client = db_manager.get_redis_client()
             alert_repo = AlertRepository(mongo_db, redis_client)
             alert_service = AlertService(alert_repo)
-            process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo, account_service, alert_service)
+            alert_rule_repo = AlertRuleRepository(mongo_db)
+            alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
+            process_service = ProcessService(
+                process_repo,
+                measurement_repo,
+                sensor_repo,
+                user_repo,
+                invoice_repo,
+                account_service,
+                alert_service,
+                alert_rule_service
+            )
             
             # Get execution
             execution = process_service.get_execution(request_id)
@@ -1258,7 +1519,18 @@ class ScheduleProcessDialog(QDialog):
             redis_client = db_manager.get_redis_client()
             alert_repo = AlertRepository(mongo_db, redis_client)
             alert_service = AlertService(alert_repo)
-            process_service = ProcessService(process_repo, measurement_repo, sensor_repo, user_repo, invoice_repo, account_service, alert_service)
+            alert_rule_repo = AlertRuleRepository(mongo_db)
+            alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
+            process_service = ProcessService(
+                process_repo,
+                measurement_repo,
+                sensor_repo,
+                user_repo,
+                invoice_repo,
+                account_service,
+                alert_service,
+                alert_rule_service
+            )
             
             processes = process_service.get_all_processes(skip=0, limit=100)
             

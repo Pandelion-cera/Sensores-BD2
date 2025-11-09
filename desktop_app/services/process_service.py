@@ -10,11 +10,13 @@ from desktop_app.repositories.invoice_repository import InvoiceRepository
 from desktop_app.services.invoice_service import InvoiceService
 from desktop_app.services.account_service import AccountService
 from desktop_app.services.alert_service import AlertService
+from desktop_app.services.alert_rule_service import AlertRuleService
 from desktop_app.models.process_models import (
     Process, ProcessCreate, ProcessRequest, ProcessRequestCreate,
     Execution, ExecutionCreate, ProcessStatus, ProcessType
 )
 from desktop_app.models.alert_models import AlertCreate, AlertType
+from desktop_app.models.alert_rule_models import AlertRuleCreate, LocationScope
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,8 @@ class ProcessService:
         user_repo: Optional[UserRepository] = None,
         invoice_repo: Optional[InvoiceRepository] = None,
         account_service: Optional[AccountService] = None,
-        alert_service: Optional[AlertService] = None
+        alert_service: Optional[AlertService] = None,
+        alert_rule_service: Optional[AlertRuleService] = None
     ):
         self.process_repo = process_repo
         self.measurement_repo = measurement_repo
@@ -36,6 +39,7 @@ class ProcessService:
         self.user_repo = user_repo
         self.invoice_repo = invoice_repo
         self.alert_service = alert_service
+        self.alert_rule_service = alert_rule_service
         # Initialize invoice service if invoice repo is provided
         self.invoice_service = None
         if invoice_repo:
@@ -160,6 +164,9 @@ class ProcessService:
             elif process.tipo == ProcessType.ONLINE_QUERY:
                 logger.debug("Executing online query")
                 resultado = self._execute_online_query(request.parametros)
+            elif process.tipo == ProcessType.ALERT_CONFIG:
+                logger.debug("Executing alert configuration process")
+                resultado = self._execute_alert_configuration(request)
             else:
                 logger.warning(f"Unknown process type: {process.tipo}")
                 resultado = {"message": "Process type not implemented yet"}
@@ -383,6 +390,124 @@ class ProcessService:
         }
         logger.debug(f"Query result: {result['cantidad_mediciones']} measurements returned")
         return result
+    
+    def _execute_alert_configuration(self, request: ProcessRequest) -> Dict[str, Any]:
+        """Create user-specific alert rules based on process parameters"""
+        if not self.alert_rule_service:
+            logger.error("AlertRuleService is not configured; cannot execute alert configuration process")
+            raise ValueError("Alert rule service is not available")
+        
+        parametros = request.parametros or {}
+        logger.debug("Executing alert configuration with parameters: %s", parametros)
+        
+        nombre = (parametros.get("nombre") or "").strip()
+        descripcion = (parametros.get("descripcion") or "").strip()
+        if not nombre or not descripcion:
+            raise ValueError("Debe proporcionar 'nombre' y 'descripcion' para la regla de alerta")
+        
+        def _parse_optional_float(value: Any, field_name: str) -> Optional[float]:
+            if value in (None, "", "null"):
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"El valor de '{field_name}' no es válido") from exc
+        
+        temp_min = _parse_optional_float(parametros.get("temp_min"), "temp_min")
+        temp_max = _parse_optional_float(parametros.get("temp_max"), "temp_max")
+        humidity_min = _parse_optional_float(parametros.get("humidity_min"), "humidity_min")
+        humidity_max = _parse_optional_float(parametros.get("humidity_max"), "humidity_max")
+        
+        if all(value is None for value in (temp_min, temp_max, humidity_min, humidity_max)):
+            raise ValueError("Debe especificar al menos una condición de temperatura u humedad")
+        
+        if temp_min is not None and temp_max is not None and temp_min > temp_max:
+            raise ValueError("temp_min no puede ser mayor que temp_max")
+        if humidity_min is not None and humidity_max is not None and humidity_min > humidity_max:
+            raise ValueError("humidity_min no puede ser mayor que humidity_max")
+        
+        scope_str = parametros.get("location_scope") or LocationScope.COUNTRY.value
+        try:
+            location_scope = LocationScope(scope_str)
+        except ValueError as exc:
+            raise ValueError(f"Ámbito de ubicación inválido: {scope_str}") from exc
+        
+        pais = (parametros.get("pais") or "").strip()
+        ciudad = (parametros.get("ciudad") or "").strip()
+        region = (parametros.get("region") or "").strip()
+        
+        if not pais:
+            raise ValueError("El parámetro 'pais' es obligatorio")
+        if location_scope == LocationScope.CITY and not ciudad:
+            raise ValueError("Debe especificar la 'ciudad' cuando el ámbito es 'ciudad'")
+        if location_scope == LocationScope.REGION and not region:
+            raise ValueError("Debe especificar la 'region' cuando el ámbito es 'region'")
+        
+        def _parse_optional_datetime(value: Any, field_name: str) -> Optional[datetime]:
+            if not value:
+                return None
+            if isinstance(value, datetime):
+                return value
+            try:
+                return datetime.fromisoformat(str(value))
+            except ValueError as exc:
+                raise ValueError(f"El valor de '{field_name}' no es una fecha válida") from exc
+        
+        fecha_inicio = _parse_optional_datetime(parametros.get("fecha_inicio"), "fecha_inicio")
+        fecha_fin = _parse_optional_datetime(parametros.get("fecha_fin"), "fecha_fin")
+        if fecha_inicio and fecha_fin and fecha_inicio > fecha_fin:
+            raise ValueError("La fecha de inicio no puede ser posterior a la fecha de fin")
+        
+        prioridad = parametros.get("prioridad") or 1
+        try:
+            prioridad = int(prioridad)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("El valor de 'prioridad' no es válido") from exc
+        
+        creado_por = "proceso@system"
+        if self.user_repo:
+            try:
+                user = self.user_repo.get_by_id(request.user_id)
+                if user and getattr(user, "email", None):
+                    creado_por = user.email
+            except Exception as user_error:
+                logger.warning("No se pudo obtener el email del usuario %s: %s", request.user_id, user_error)
+        
+        rule_data = AlertRuleCreate(
+            nombre=nombre,
+            descripcion=descripcion,
+            temp_min=temp_min,
+            temp_max=temp_max,
+            humidity_min=humidity_min,
+            humidity_max=humidity_max,
+            location_scope=location_scope,
+            ciudad=ciudad if location_scope == LocationScope.CITY else None,
+            region=region if location_scope == LocationScope.REGION else None,
+            pais=pais,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            prioridad=prioridad,
+            user_id=request.user_id
+        )
+        
+        logger.info(
+            "Creating alert rule via process for user %s (scope=%s, pais=%s, ciudad=%s, region=%s)",
+            request.user_id,
+            location_scope.value,
+            pais,
+            ciudad,
+            region
+        )
+        
+        rule = self.alert_rule_service.create_rule(rule_data, creado_por)
+        logger.info("Alert rule %s created for user %s", rule.id, request.user_id)
+        
+        return {
+            "tipo": "configuracion_alertas",
+            "mensaje": "Regla de alerta creada exitosamente",
+            "rule_id": rule.id,
+            "regla": rule.model_dump()
+        }
     
     def grant_process_permission(self, user_id: str, process_id: str) -> bool:
         """Grant user permission to execute a process"""

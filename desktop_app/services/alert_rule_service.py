@@ -1,5 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
+import logging
 
 from desktop_app.repositories.alert_rule_repository import AlertRuleRepository
 from desktop_app.repositories.alert_repository import AlertRepository
@@ -11,6 +12,8 @@ from desktop_app.models.alert_rule_models import (
     LocationScope
 )
 from desktop_app.models.alert_models import AlertCreate, AlertType
+
+logger = logging.getLogger(__name__)
 
 
 class AlertRuleService:
@@ -135,6 +138,14 @@ class AlertRuleService:
         triggered_alerts = []
         
         for rule in applicable_rules:
+            logger.debug(
+                "Evaluating rule %s for sensor %s (temp=%s, hum=%s)",
+                rule.id,
+                sensor_id,
+                temperatura,
+                humedad
+            )
+
             alert_triggered = False
             alert_description = []
             
@@ -178,6 +189,7 @@ class AlertRuleService:
                 alert = self.alert_repo.create(AlertCreate(
                     tipo=AlertType.THRESHOLD,
                     sensor_id=sensor_id,
+                    user_id=rule.user_id,
                     descripcion=full_description,
                     valor=temperatura if temperatura is not None else humedad,
                     umbral=None,  # En este caso no hay un umbral único
@@ -185,6 +197,13 @@ class AlertRuleService:
                     rule_name=rule.nombre,
                     prioridad=rule.prioridad
                 ))
+                logger.info(
+                    "Alert triggered for user=%s rule=%s sensor=%s description=%s",
+                    rule.user_id,
+                    rule.id,
+                    sensor_id,
+                    full_description
+                )
                 
                 triggered_alerts.append({
                     "rule_id": rule.id,

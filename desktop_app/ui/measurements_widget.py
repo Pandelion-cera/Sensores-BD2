@@ -259,23 +259,47 @@ class MeasurementsWidget(QWidget):
                 
                 user_repo = UserRepository(mongo_db, neo4j_driver)
                 sensor_service = SensorService(
-                    sensor_repo, 
-                    measurement_repo, 
+                    sensor_repo,
+                    measurement_repo,
                     alert_service,
-                    alert_rule_service,
+                    alert_rule_service=alert_rule_service,
                     user_repo=user_repo
                 )
                 
                 # Register the measurement
                 result = sensor_service.register_measurement(sensor_id, measurement_data)
                 
-                QMessageBox.information(
-                    self, 
-                    "Éxito", 
-                    f"Medición agregada exitosamente!\n\n"
-                    f"Temperatura: {measurement_data.temperature or 'N/A'}°C\n"
-                    f"Humedad: {measurement_data.humidity or 'N/A'}%"
+                triggered = result.get("triggered_alerts", [])
+                temp_display = (
+                    f"{measurement_data.temperature:.2f}"
+                    if measurement_data.temperature is not None
+                    else "N/A"
                 )
+                hum_display = (
+                    f"{measurement_data.humidity:.2f}"
+                    if measurement_data.humidity is not None
+                    else "N/A"
+                )
+                
+                if triggered:
+                    alerts_text = "\n".join(
+                        f"- {item['rule_name']} (prioridad {item['prioridad']})"
+                        for item in triggered
+                    )
+                    message = (
+                        "Medición agregada exitosamente!\n\n"
+                        f"Temperatura: {temp_display}°C\n"
+                        f"Humedad: {hum_display}%\n\n"
+                        f"Alertas generadas:\n{alerts_text}"
+                    )
+                else:
+                    message = (
+                        "Medición agregada exitosamente!\n\n"
+                        f"Temperatura: {temp_display}°C\n"
+                        f"Humedad: {hum_display}%"
+                    )
+                
+                QMessageBox.information(self, "Éxito", message)
                 
                 # Optionally refresh the search if filters are set
                 if self.country_edit.text().strip() and self.city_edit.text().strip():
@@ -320,7 +344,13 @@ class MeasurementsWidget(QWidget):
             alert_repo = AlertRepository(mongo_db, redis_client)
             alert_service = AlertService(alert_repo)
             user_repo = UserRepository(mongo_db, neo4j_driver)
-            sensor_service = SensorService(sensor_repo, measurement_repo, alert_service, user_repo=user_repo)
+            sensor_service = SensorService(
+                sensor_repo,
+                measurement_repo,
+                alert_service,
+                alert_rule_service=None,
+                user_repo=user_repo
+            )
             
             measurements = sensor_service.get_location_measurements(
                 pais=country,

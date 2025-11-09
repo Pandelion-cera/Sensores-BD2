@@ -20,6 +20,7 @@ from desktop_app.ui.account_widget import AccountWidget
 from desktop_app.ui.processes_widget import ProcessesWidget
 from desktop_app.ui.groups_widget import GroupsWidget
 from desktop_app.ui.maintenance_widget import MaintenanceWidget
+from desktop_app.ui.session_history_widget import SessionHistoryWidget
 from pathlib import Path
 import logging
 import subprocess
@@ -58,20 +59,23 @@ class MainWindow(QMainWindow):
         self.dashboard_widget = DashboardWidget()
         self.tabs.addTab(self.dashboard_widget, "Tablero")
         
-        # Sensors tab
-        self.sensors_widget = SensorsWidget()
-        self.tabs.addTab(self.sensors_widget, "Sensores")
+        user_role = self.session_manager.get_user_role()
         
-        # Measurements tab
-        self.measurements_widget = MeasurementsWidget()
-        self.tabs.addTab(self.measurements_widget, "Mediciones")
+        # Sensors & Measurements tabs (restricted to técnicos y administradores)
+        if user_role in ["administrador", "tecnico"]:
+            self.sensors_widget = SensorsWidget()
+            self.tabs.addTab(self.sensors_widget, "Sensores")
+            self.measurements_widget = MeasurementsWidget()
+            self.tabs.addTab(self.measurements_widget, "Mediciones")
+        else:
+            self.sensors_widget = None
+            self.measurements_widget = None
         
         # Alerts tab
         self.alerts_widget = AlertsWidget()
         self.tabs.addTab(self.alerts_widget, "Alertas")
         
         # Alert Rules tab
-        user_role = self.session_manager.get_user_role()
         if user_role in ["administrador", "tecnico"]:
             self.alert_rules_widget = AlertRulesWidget()
             self.tabs.addTab(self.alert_rules_widget, "Reglas de Alerta")
@@ -96,6 +100,8 @@ class MainWindow(QMainWindow):
         if user_role == "administrador":
             self.groups_widget = GroupsWidget()
             self.tabs.addTab(self.groups_widget, "Grupos")
+            self.session_history_widget = SessionHistoryWidget()
+            self.tabs.addTab(self.session_history_widget, "Sesiones")
         
         # Maintenance/Control de Funcionamiento tab (admin and technicians)
         if user_role in ["administrador", "tecnico"]:
@@ -103,7 +109,7 @@ class MainWindow(QMainWindow):
             self.tabs.addTab(self.maintenance_widget, "Control de Funcionamiento")
         
         layout.addWidget(self.tabs)
-        
+
         # Menu bar
         self.create_menu_bar()
         
@@ -188,6 +194,8 @@ class MainWindow(QMainWindow):
             self.processes_widget.load_processes()
         elif hasattr(self, 'groups_widget') and current_widget == self.groups_widget:
             self.groups_widget.load_groups()
+        elif hasattr(self, 'session_history_widget') and current_widget == self.session_history_widget:
+            self.session_history_widget.load_sessions()
         elif hasattr(self, 'maintenance_widget') and current_widget == self.maintenance_widget:
             self.maintenance_widget.load_records()
         self.status_bar.showMessage("Actualizado", 2000)
@@ -202,26 +210,7 @@ class MainWindow(QMainWindow):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            from desktop_app.services.auth_service import AuthService
-            from desktop_app.core.database import db_manager
-            from desktop_app.repositories.user_repository import UserRepository
-            from desktop_app.repositories.session_repository import SessionRepository
-            
-            session_id = self.session_manager.session_id
-            if session_id:
-                try:
-                    mongo_db = db_manager.get_mongo_db()
-                    redis_client = db_manager.get_redis_client()
-                    neo4j_driver = db_manager.get_neo4j_driver()
-                    
-                    user_repo = UserRepository(mongo_db, neo4j_driver)
-                    session_repo = SessionRepository(redis_client, mongo_db)
-                    auth_service = AuthService(user_repo, session_repo)
-                    auth_service.logout(session_id)
-                except:
-                    pass
-            
-            self.session_manager.clear_session()
+            self._perform_logout()
             # Emit signal to notify main that logout was requested
             self.logout_requested.emit()
             self.close()
@@ -271,6 +260,36 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """Handle window close event"""
-        # Cleanup can be done here if needed
+        self._perform_logout(silent=True)
         event.accept()
+    
+    def _perform_logout(self, silent: bool = False):
+        """Perform logout if a session is active"""
+        session_id = self.session_manager.session_id
+        if not session_id:
+            return
+        
+        try:
+            from desktop_app.services.auth_service import AuthService
+            from desktop_app.core.database import db_manager
+            from desktop_app.repositories.user_repository import UserRepository
+            from desktop_app.repositories.session_repository import SessionRepository
+            
+            mongo_db = db_manager.get_mongo_db()
+            redis_client = db_manager.get_redis_client()
+            neo4j_driver = db_manager.get_neo4j_driver()
+            
+            user_repo = UserRepository(mongo_db, neo4j_driver)
+            session_repo = SessionRepository(redis_client, mongo_db)
+            auth_service = AuthService(user_repo, session_repo)
+            auth_service.logout(session_id)
+        except Exception as exc:
+            if not silent:
+                QMessageBox.warning(
+                    self,
+                    "Advertencia",
+                    f"No se pudo cerrar la sesión correctamente: {exc}"
+                )
+        finally:
+            self.session_manager.clear_session()
 

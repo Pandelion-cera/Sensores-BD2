@@ -24,6 +24,24 @@ class SessionRepository:
     def create_session(self, session_id: str, user_id: str, role: str, ttl: Optional[int] = None) -> Dict[str, Any]:
         """Create a new session in Redis and MongoDB"""
         login_time = datetime.utcnow()
+
+        # Close previously active sessions for this user
+        existing_sessions = self.get_all_active_sessions(user_id=user_id)
+        for existing_session_id in list(existing_sessions.keys()):
+            if existing_session_id != session_id:
+                self.redis.delete(f"{self.session_prefix}{existing_session_id}")
+        
+        if self.mongo_db is not None and self.sessions_col is not None:
+            self.sessions_col.update_many(
+                {"user_id": user_id, "status": "activa"},
+                {
+                    "$set": {
+                        "status": "cerrada",
+                        "logout_time": login_time
+                    }
+                }
+            )
+
         session_data = {
             "user_id": user_id,
             "role": role,
@@ -135,21 +153,51 @@ class SessionRepository:
             query["user_id"] = user_id
         
         sessions = []
-        for session in self.sessions_col.find(query).sort("login_time", -1).skip(skip).limit(limit):
+        cursor = (
+            self.sessions_col.find(query)
+            .sort("login_time", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+
+        for session_doc in cursor:
+            session = dict(session_doc)
+
+            if session.get("status") == "activa":
+                redis_session = self.get_session(session.get("session_id"))
+                if not redis_session:
+                    logout_time = session.get("logout_time") or datetime.utcnow()
+                    self.sessions_col.update_one(
+                        {"_id": session_doc["_id"]},
+                        {
+                            "$set": {
+                                "logout_time": logout_time,
+                                "status": "cerrada",
+                            }
+                        },
+                    )
+                    session["logout_time"] = logout_time
+                    session["status"] = "cerrada"
+
             session["_id"] = str(session["_id"])
-            # Parse datetime fields
+
             if "login_time" in session and session["login_time"]:
                 if isinstance(session["login_time"], str):
                     try:
-                        session["login_time"] = datetime.fromisoformat(session["login_time"].replace("Z", "+00:00"))
-                    except:
+                        session["login_time"] = datetime.fromisoformat(
+                            session["login_time"].replace("Z", "+00:00")
+                        )
+                    except Exception:
                         pass
             if "logout_time" in session and session["logout_time"]:
                 if isinstance(session["logout_time"], str):
                     try:
-                        session["logout_time"] = datetime.fromisoformat(session["logout_time"].replace("Z", "+00:00"))
-                    except:
+                        session["logout_time"] = datetime.fromisoformat(
+                            session["logout_time"].replace("Z", "+00:00")
+                        )
+                    except Exception:
                         pass
+
             sessions.append(session)
         
         return sessions

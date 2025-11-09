@@ -27,6 +27,7 @@ class AlertRuleRepository:
         self.collection.create_index([("pais", 1), ("ciudad", 1)])
         self.collection.create_index("fecha_creacion")
         self.collection.create_index("prioridad")
+        self.collection.create_index("user_id")
     
     def create(self, rule_data: AlertRuleCreate, created_by: str) -> AlertRule:
         """Crear una nueva regla de alerta"""
@@ -34,6 +35,8 @@ class AlertRuleRepository:
         rule_dict["creado_por"] = created_by
         rule_dict["fecha_creacion"] = datetime.utcnow()
         rule_dict["fecha_modificacion"] = None
+        if "user_id" not in rule_dict:
+            rule_dict["user_id"] = None
         
         result = self.collection.insert_one(rule_dict)
         rule_dict["_id"] = str(result.inserted_id)
@@ -103,49 +106,45 @@ class AlertRuleRepository:
         if fecha is None:
             fecha = datetime.utcnow()
         
-        query = {
-            "estado": AlertRuleStatus.ACTIVE,
-            "$or": [
-                # Reglas a nivel de país
-                {
-                    "pais": pais,
-                    "location_scope": LocationScope.COUNTRY
-                },
-                # Reglas a nivel de región
-                {
-                    "pais": pais,
-                    "location_scope": LocationScope.REGION,
-                    "region": region
-                } if region else {},
-                # Reglas a nivel de ciudad
-                {
-                    "pais": pais,
-                    "location_scope": LocationScope.CITY,
-                    "ciudad": ciudad
-                } if ciudad else {}
-            ]
-        }
-        
-        # Filtrar por rango de fechas
-        date_filter = {
-            "$or": [
-                # Sin restricción de fechas
-                {"fecha_inicio": None, "fecha_fin": None},
-                # Solo fecha inicio
-                {"fecha_inicio": {"$lte": fecha}, "fecha_fin": None},
-                # Solo fecha fin
-                {"fecha_inicio": None, "fecha_fin": {"$gte": fecha}},
-                # Ambas fechas
-                {"fecha_inicio": {"$lte": fecha}, "fecha_fin": {"$gte": fecha}}
-            ]
-        }
-        
-        query = {"$and": [query, date_filter]}
+        pais_norm = (pais or "").strip().lower()
+        ciudad_norm = (ciudad or "").strip().lower()
+        region_norm = (region or "").strip().lower()
         
         rules = []
-        for rule in self.collection.find(query).sort("prioridad", -1):
-            rule["_id"] = str(rule["_id"])
-            rules.append(AlertRule(**rule))
+        cursor = self.collection.find({"estado": AlertRuleStatus.ACTIVE}).sort("prioridad", -1)
+        
+        for rule_doc in cursor:
+            rule_doc["_id"] = str(rule_doc["_id"])
+            rule = AlertRule(**rule_doc)
+            
+            if not rule.pais:
+                continue
+            
+            if rule.location_scope == LocationScope.COUNTRY:
+                if not pais_norm or rule.pais.strip().lower() != pais_norm:
+                    continue
+            elif rule.location_scope == LocationScope.CITY:
+                if not (pais_norm and ciudad_norm):
+                    continue
+                if rule.pais.strip().lower() != pais_norm:
+                    continue
+                if not rule.ciudad or rule.ciudad.strip().lower() != ciudad_norm:
+                    continue
+            elif rule.location_scope == LocationScope.REGION:
+                if not (pais_norm and region_norm):
+                    continue
+                if rule.pais.strip().lower() != pais_norm:
+                    continue
+                if not rule.region or rule.region.strip().lower() != region_norm:
+                    continue
+            
+            # Filtrar por rango de fechas
+            if rule.fecha_inicio and rule.fecha_inicio > fecha:
+                continue
+            if rule.fecha_fin and rule.fecha_fin < fecha:
+                continue
+            
+            rules.append(rule)
         
         return rules
     

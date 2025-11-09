@@ -18,6 +18,7 @@ class SensorService:
         sensor_repo: SensorRepository,
         measurement_repo: MeasurementRepository,
         alert_service: AlertService,
+        *,
         alert_rule_service: Optional[AlertRuleService] = None,
         user_repo: Optional[UserRepository] = None
     ):

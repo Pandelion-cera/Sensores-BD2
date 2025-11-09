@@ -15,6 +15,8 @@ from desktop_app.repositories.user_repository import UserRepository
 from desktop_app.repositories.invoice_repository import InvoiceRepository
 from desktop_app.repositories.account_repository import AccountRepository
 from desktop_app.services.account_service import AccountService
+from desktop_app.repositories.alert_rule_repository import AlertRuleRepository
+from desktop_app.services.alert_rule_service import AlertRuleService
 from desktop_app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -107,6 +109,8 @@ class SchedulerWorker:
             from desktop_app.services.alert_service import AlertService
             alert_repo = AlertRepository(mongo_db, redis_client)
             alert_service = AlertService(alert_repo)
+            alert_rule_repo = AlertRuleRepository(mongo_db)
+            alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
             process_service = ProcessService(
                 process_repo,
                 measurement_repo,
@@ -114,7 +118,8 @@ class SchedulerWorker:
                 user_repo,
                 invoice_repo,
                 account_service,
-                alert_service
+                alert_service,
+                alert_rule_service
             )
             scheduler_service = ProcessSchedulerService(
                 schedule_repo,

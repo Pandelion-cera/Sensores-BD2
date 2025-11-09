@@ -48,6 +48,10 @@ class AlertRule(BaseModel):
     creado_por: str = Field(..., description="Email del admin que creó la regla")
     fecha_creacion: datetime = Field(default_factory=datetime.utcnow)
     fecha_modificacion: Optional[datetime] = None
+    user_id: Optional[str] = Field(
+        None,
+        description="Usuario propietario de la regla (None = regla global)"
+    )
     
     class Config:
         populate_by_name = True
@@ -67,7 +71,8 @@ class AlertRule(BaseModel):
                 "fecha_fin": "2025-03-31T23:59:59",
                 "estado": "activa",
                 "prioridad": 4,
-                "creado_por": "admin@example.com"
+                "creado_por": "admin@example.com",
+                "user_id": "64b123..."
             }
         }
 
@@ -93,6 +98,10 @@ class AlertRuleCreate(BaseModel):
     
     estado: AlertRuleStatus = AlertRuleStatus.ACTIVE
     prioridad: int = Field(default=1, ge=1, le=5)
+    user_id: Optional[str] = Field(
+        None,
+        description="Usuario propietario de la regla (None = regla global)"
+    )
     
     class Config:
         json_schema_extra = {
@@ -106,7 +115,8 @@ class AlertRuleCreate(BaseModel):
                 "pais": "Argentina",
                 "fecha_inicio": "2025-06-01T00:00:00",
                 "fecha_fin": "2025-09-30T23:59:59",
-                "prioridad": 3
+                "prioridad": 3,
+                "user_id": "64b123..."
             }
         }
 
@@ -154,6 +164,7 @@ class AlertRuleResponse(BaseModel):
     creado_por: str
     fecha_creacion: datetime
     fecha_modificacion: Optional[datetime]
+    user_id: Optional[str]
     
     class Config:
         populate_by_name = True

@@ -16,6 +16,7 @@ class SensorService:
         sensor_repo: SensorRepository,
         measurement_repo: MeasurementRepository,
         alert_service: AlertService,
+        *,
         alert_rule_service: Optional[AlertRuleService] = None
     ):
         self.sensor_repo = sensor_repo
