@@ -246,6 +246,7 @@ class MeasurementsWidget(QWidget):
                 mongo_db = db_manager.get_mongo_db()
                 cassandra_session = db_manager.get_cassandra_session()
                 redis_client = db_manager.get_redis_client()
+                neo4j_driver = db_manager.get_neo4j_driver()
                 
                 sensor_repo = SensorRepository(mongo_db)
                 measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
@@ -312,12 +313,12 @@ class MeasurementsWidget(QWidget):
             mongo_db = db_manager.get_mongo_db()
             cassandra_session = db_manager.get_cassandra_session()
             redis_client = db_manager.get_redis_client()
+            neo4j_driver = db_manager.get_neo4j_driver()
             
             sensor_repo = SensorRepository(mongo_db)
             measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
             alert_repo = AlertRepository(mongo_db, redis_client)
             alert_service = AlertService(alert_repo)
-            neo4j_driver = db_manager.get_neo4j_driver()
             user_repo = UserRepository(mongo_db, neo4j_driver)
             sensor_service = SensorService(sensor_repo, measurement_repo, alert_service, user_repo=user_repo)
             
