@@ -11,10 +11,7 @@ from PyQt6.QtCore import Qt, QDate
 from datetime import datetime
 from typing import Optional
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.alert_rule_repository import AlertRuleRepository
-from desktop_app.repositories.alert_repository import AlertRepository
-from desktop_app.services.alert_rule_service import AlertRuleService
+from desktop_app.controllers import get_alert_rule_controller
 from desktop_app.models.alert_rule_models import (
     AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleStatus, LocationScope
 )
@@ -301,6 +298,7 @@ class AlertRulesWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.session_manager = SessionManager.get_instance()
+        self.alert_rule_controller = get_alert_rule_controller()
         self.init_ui()
         self.load_rules()
     
@@ -383,20 +381,13 @@ class AlertRulesWidget(QWidget):
     
     def load_rules(self):
         try:
-            mongo_db = db_manager.get_mongo_db()
-            redis_client = db_manager.get_redis_client()
-            
-            rule_repo = AlertRuleRepository(mongo_db)
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            rule_service = AlertRuleService(rule_repo, alert_repo)
-            
             # Get filters
             country = self.country_filter.text().strip() or None
             city = self.city_filter.text().strip() or None
             status_str = self.status_filter.currentText()
             status = AlertRuleStatus(status_str) if status_str else None
             
-            rules = rule_service.get_all_rules(
+            rules = self.alert_rule_controller.list_rules(
                 skip=0,
                 limit=1000,
                 estado=status,
@@ -472,21 +463,13 @@ class AlertRulesWidget(QWidget):
             try:
                 data = dialog.get_data()
                 rule_data = AlertRuleCreate(**data)
-                
-                mongo_db = db_manager.get_mongo_db()
-                redis_client = db_manager.get_redis_client()
-                
-                rule_repo = AlertRuleRepository(mongo_db)
-                alert_repo = AlertRepository(mongo_db, redis_client)
-                rule_service = AlertRuleService(rule_repo, alert_repo)
-                
                 user = self.session_manager.get_user()
                 user_email = user.get("email", "") if user else ""
                 # Fallback to user ID if email not available
                 if not user_email:
                     user_id = self.session_manager.get_user_id()
                     user_email = f"user_{user_id}" if user_id else "unknown"
-                rule_service.create_rule(rule_data, user_email)
+                self.alert_rule_controller.create_rule(rule_data, user_email)
                 QMessageBox.information(self, "Éxito", "Regla de alerta creada exitosamente")
                 self.load_rules()
             except Exception as e:
@@ -498,15 +481,7 @@ class AlertRulesWidget(QWidget):
             try:
                 data = dialog.get_data()
                 rule_update = AlertRuleUpdate(**data)
-                
-                mongo_db = db_manager.get_mongo_db()
-                redis_client = db_manager.get_redis_client()
-                
-                rule_repo = AlertRuleRepository(mongo_db)
-                alert_repo = AlertRepository(mongo_db, redis_client)
-                rule_service = AlertRuleService(rule_repo, alert_repo)
-                
-                rule_service.update_rule(rule.id, rule_update)
+                self.alert_rule_controller.update_rule(rule.id, rule_update)
                 QMessageBox.information(self, "Éxito", "Regla de alerta actualizada exitosamente")
                 self.load_rules()
             except Exception as e:
@@ -522,14 +497,7 @@ class AlertRulesWidget(QWidget):
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                mongo_db = db_manager.get_mongo_db()
-                redis_client = db_manager.get_redis_client()
-                
-                rule_repo = AlertRuleRepository(mongo_db)
-                alert_repo = AlertRepository(mongo_db, redis_client)
-                rule_service = AlertRuleService(rule_repo, alert_repo)
-                
-                rule_service.delete_rule(rule.id)
+                self.alert_rule_controller.delete_rule(rule.id)
                 QMessageBox.information(self, "Éxito", "Regla de alerta eliminada exitosamente")
                 self.load_rules()
             except Exception as e:
@@ -537,14 +505,7 @@ class AlertRulesWidget(QWidget):
     
     def activate_rule(self, rule: AlertRule):
         try:
-            mongo_db = db_manager.get_mongo_db()
-            redis_client = db_manager.get_redis_client()
-            
-            rule_repo = AlertRuleRepository(mongo_db)
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            rule_service = AlertRuleService(rule_repo, alert_repo)
-            
-            rule_service.activate_rule(rule.id)
+            self.alert_rule_controller.activate_rule(rule.id)
             QMessageBox.information(self, "Éxito", "Regla de alerta activada exitosamente")
             self.load_rules()
         except Exception as e:
@@ -552,14 +513,7 @@ class AlertRulesWidget(QWidget):
     
     def deactivate_rule(self, rule: AlertRule):
         try:
-            mongo_db = db_manager.get_mongo_db()
-            redis_client = db_manager.get_redis_client()
-            
-            rule_repo = AlertRuleRepository(mongo_db)
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            rule_service = AlertRuleService(rule_repo, alert_repo)
-            
-            rule_service.deactivate_rule(rule.id)
+            self.alert_rule_controller.deactivate_rule(rule.id)
             QMessageBox.information(self, "Éxito", "Regla de alerta desactivada exitosamente")
             self.load_rules()
         except Exception as e:

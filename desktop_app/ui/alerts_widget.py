@@ -12,12 +12,7 @@ from PyQt6.QtGui import QColor
 from datetime import datetime
 from typing import Optional
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.alert_repository import AlertRepository
-from desktop_app.repositories.sensor_repository import SensorRepository
-from desktop_app.repositories.process_repository import ProcessRepository
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.services.alert_service import AlertService
+from desktop_app.controllers import get_alert_controller
 from desktop_app.models.alert_models import Alert, AlertStatus, AlertType
 from desktop_app.utils.session_manager import SessionManager
 
@@ -28,6 +23,7 @@ class AlertsWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.session_manager = SessionManager.get_instance()
+        self.alert_controller = get_alert_controller()
         self.init_ui()
         self.load_alerts()
     
@@ -137,11 +133,6 @@ class AlertsWidget(QWidget):
     
     def load_alerts(self):
         try:
-            mongo_db = db_manager.get_mongo_db()
-            redis_client = db_manager.get_redis_client()
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            alert_service = AlertService(alert_repo)
-            
             # Get filters
             status_str = self.status_filter.currentText()
             status = AlertStatus(status_str) if status_str else None
@@ -163,7 +154,7 @@ class AlertsWidget(QWidget):
             if user_role != "administrador":
                 user_id = self.session_manager.get_user_id()
             
-            alerts = alert_service.get_all_alerts(
+            alerts = self.alert_controller.list_alerts(
                 skip=0,
                 limit=1000,
                 estado=status,
@@ -231,15 +222,9 @@ class AlertsWidget(QWidget):
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                mongo_db = db_manager.get_mongo_db()
-                redis_client = db_manager.get_redis_client()
-                alert_repo = AlertRepository(mongo_db, redis_client)
-                alert_service = AlertService(alert_repo)
-                
-                alert = alert_service.get_alert(alert_id)
+                alert = self.alert_controller.get_alert(alert_id)
                 if alert:
-                    # Use update_status method with FINISHED status (resolved)
-                    alert_repo.update_status(alert_id, AlertStatus.FINISHED)
+                    self.alert_controller.resolve_alert(alert_id)
                     QMessageBox.information(self, "Éxito", "Alerta marcada como resuelta")
                     self.load_alerts()
                 else:
@@ -254,7 +239,7 @@ class AlertsWidget(QWidget):
             return
         
         alert = self.alerts[row]
-        dialog = AlertDetailDialog(alert, self)
+        dialog = AlertDetailDialog(alert, self, controller=self.alert_controller)
         dialog.exec()
     
     def show_selected_alert_details(self):
@@ -268,16 +253,17 @@ class AlertsWidget(QWidget):
             return
         
         alert = self.alerts[current_row]
-        dialog = AlertDetailDialog(alert, self)
+        dialog = AlertDetailDialog(alert, self, controller=self.alert_controller)
         dialog.exec()
 
 
 class AlertDetailDialog(QDialog):
     """Dialog for showing alert details"""
     
-    def __init__(self, alert: Alert, parent=None):
+    def __init__(self, alert: Alert, parent=None, controller=None):
         super().__init__(parent)
         self.alert = alert
+        self.alert_controller = controller or get_alert_controller()
         self.setWindowTitle(f"Detalles de Alerta #{alert.id}")
         self.setMinimumWidth(500)
         self.init_ui()
@@ -331,16 +317,11 @@ class AlertDetailDialog(QDialog):
             sensor_layout.addRow("ID Sensor:", QLabel(str(self.alert.sensor_id)))
             
             # Try to get sensor details
-            try:
-                mongo_db = db_manager.get_mongo_db()
-                sensor_repo = SensorRepository(mongo_db)
-                sensor = sensor_repo.get_by_sensor_id(self.alert.sensor_id)
-                if sensor:
-                    sensor_layout.addRow("Nombre:", QLabel(sensor.nombre))
-                    sensor_layout.addRow("Ubicación:", QLabel(f"{sensor.ciudad}, {sensor.pais}"))
-                    sensor_layout.addRow("Estado:", QLabel(sensor.estado.value if sensor.estado else "N/A"))
-            except:
-                pass
+            sensor = self.alert_controller.get_sensor(self.alert.sensor_id)
+            if sensor:
+                sensor_layout.addRow("Nombre:", QLabel(sensor.nombre))
+                sensor_layout.addRow("Ubicación:", QLabel(f"{sensor.ciudad}, {sensor.pais}"))
+                sensor_layout.addRow("Estado:", QLabel(sensor.estado.value if sensor.estado else "N/A"))
             
             sensor_group.setLayout(sensor_layout)
             layout.addWidget(sensor_group)
@@ -354,17 +335,11 @@ class AlertDetailDialog(QDialog):
                 process_layout.addRow("ID Ejecución:", QLabel(str(self.alert.execution_id)))
             
             # Try to get process details
-            try:
-                mongo_db = db_manager.get_mongo_db()
-                neo4j_driver = db_manager.get_neo4j_driver()
-                process_repo = ProcessRepository(mongo_db, neo4j_driver)
-                process = process_repo.get_process(self.alert.process_id)
-                if process:
-                    process_layout.addRow("Nombre:", QLabel(process.nombre))
-                    process_layout.addRow("Tipo:", QLabel(process.tipo.value if process.tipo else "N/A"))
-                    process_layout.addRow("Costo:", QLabel(f"${process.costo:.2f}"))
-            except:
-                pass
+            process = self.alert_controller.get_process(self.alert.process_id)
+            if process:
+                process_layout.addRow("Nombre:", QLabel(process.nombre))
+                process_layout.addRow("Tipo:", QLabel(process.tipo.value if process.tipo else "N/A"))
+                process_layout.addRow("Costo:", QLabel(f"${process.costo:.2f}"))
             
             process_group.setLayout(process_layout)
             layout.addWidget(process_group)
@@ -401,17 +376,11 @@ class AlertDetailDialog(QDialog):
             user_layout = QFormLayout()
             
             # Try to get user details
-            try:
-                mongo_db = db_manager.get_mongo_db()
-                neo4j_driver = db_manager.get_neo4j_driver()
-                user_repo = UserRepository(mongo_db, neo4j_driver)
-                user = user_repo.get_by_id(self.alert.user_id)
-                if user:
-                    user_layout.addRow("Nombre:", QLabel(user.nombre_completo))
-                    user_layout.addRow("Email:", QLabel(user.email))
-                else:
-                    user_layout.addRow("ID Usuario:", QLabel(str(self.alert.user_id)))
-            except:
+            user = self.alert_controller.get_user(self.alert.user_id)
+            if user:
+                user_layout.addRow("Nombre:", QLabel(user.nombre_completo))
+                user_layout.addRow("Email:", QLabel(user.email))
+            else:
                 user_layout.addRow("ID Usuario:", QLabel(str(self.alert.user_id)))
             
             user_group.setLayout(user_layout)

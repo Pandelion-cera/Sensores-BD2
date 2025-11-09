@@ -11,24 +11,18 @@ from PyQt6.QtCore import Qt, QDate
 from typing import Optional, List
 from datetime import datetime, timedelta
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.sensor_repository import SensorRepository
-from desktop_app.repositories.measurement_repository import MeasurementRepository
-from desktop_app.repositories.alert_repository import AlertRepository
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.services.sensor_service import SensorService
-from desktop_app.services.alert_service import AlertService
+from desktop_app.controllers import get_sensor_controller
 from desktop_app.models.sensor_models import Sensor, SensorCreate, SensorUpdate, SensorStatus
 from desktop_app.utils.session_manager import SessionManager
-from desktop_app.core.config import settings
 
 
 class SensorDialog(QDialog):
     """Dialog for creating/editing sensors"""
     
-    def __init__(self, parent=None, sensor: Optional[Sensor] = None):
+    def __init__(self, parent=None, sensor: Optional[Sensor] = None, controller=None):
         super().__init__(parent)
         self.sensor = sensor
+        self.sensor_controller = controller or get_sensor_controller()
         self.setWindowTitle("Editar Sensor" if sensor else "Crear Sensor")
         self.setMinimumWidth(400)
         self.init_ui()
@@ -115,9 +109,10 @@ class SensorDialog(QDialog):
 class SensorMeasurementsDialog(QDialog):
     """Dialog for viewing sensor measurements"""
     
-    def __init__(self, parent=None, sensor: Optional[Sensor] = None):
+    def __init__(self, parent=None, sensor: Optional[Sensor] = None, controller=None):
         super().__init__(parent)
         self.sensor = sensor
+        self.sensor_controller = controller or get_sensor_controller()
         self.setWindowTitle(f"Mediciones - {sensor.nombre if sensor else 'Sensor'}")
         self.setMinimumWidth(800)
         self.setMinimumHeight(600)
@@ -215,27 +210,8 @@ class SensorMeasurementsDialog(QDialog):
             start_date = datetime(start_qdate.year(), start_qdate.month(), start_qdate.day())
             end_date = datetime(end_qdate.year(), end_qdate.month(), end_qdate.day(), 23, 59, 59)
             
-            # Get services
-            mongo_db = db_manager.get_mongo_db()
-            cassandra_session = db_manager.get_cassandra_session()
-            redis_client = db_manager.get_redis_client()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            sensor_repo = SensorRepository(mongo_db)
-            measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            alert_service = AlertService(alert_repo)
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            sensor_service = SensorService(
-                sensor_repo,
-                measurement_repo,
-                alert_service,
-                alert_rule_service=None,
-                user_repo=user_repo
-            )
-            
             # Get measurements - try by MongoDB _id first
-            measurements = sensor_service.get_sensor_measurements(
+            measurements = self.sensor_controller.get_sensor_measurements(
                 sensor_id=self.sensor.id,
                 start_date=start_date,
                 end_date=end_date
@@ -311,6 +287,7 @@ class SensorsWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.session_manager = SessionManager.get_instance()
+        self.sensor_controller = get_sensor_controller()
         self.init_ui()
         self.load_sensors()
     
@@ -392,16 +369,13 @@ class SensorsWidget(QWidget):
     
     def load_sensors(self):
         try:
-            mongo_db = db_manager.get_mongo_db()
-            sensor_repo = SensorRepository(mongo_db)
-            
             # Get filters
             country = self.country_filter.text().strip() or None
             city = self.city_filter.text().strip() or None
             status_str = self.status_filter.currentText()
             status = SensorStatus(status_str) if status_str else None
             
-            sensors = sensor_repo.get_all(
+            sensors = self.sensor_controller.list_sensors(
                 skip=0,
                 limit=1000,
                 pais=country,
@@ -452,26 +426,7 @@ class SensorsWidget(QWidget):
             try:
                 data = dialog.get_data()
                 sensor_data = SensorCreate(**data)
-                
-                mongo_db = db_manager.get_mongo_db()
-                cassandra_session = db_manager.get_cassandra_session()
-                redis_client = db_manager.get_redis_client()
-                
-                sensor_repo = SensorRepository(mongo_db)
-                measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-                alert_repo = AlertRepository(mongo_db, redis_client)
-                alert_service = AlertService(alert_repo)
-                neo4j_driver = db_manager.get_neo4j_driver()
-                user_repo = UserRepository(mongo_db, neo4j_driver)
-                sensor_service = SensorService(
-                    sensor_repo,
-                    measurement_repo,
-                    alert_service,
-                    alert_rule_service=None,
-                    user_repo=user_repo
-                )
-                
-                sensor_service.create_sensor(sensor_data)
+                self.sensor_controller.create_sensor(sensor_data)
                 QMessageBox.information(self, "Éxito", "Sensor creado exitosamente")
                 self.load_sensors()
             except Exception as e:
@@ -483,26 +438,7 @@ class SensorsWidget(QWidget):
             try:
                 data = dialog.get_data()
                 sensor_update = SensorUpdate(**data)
-                
-                mongo_db = db_manager.get_mongo_db()
-                neo4j_driver = db_manager.get_neo4j_driver()
-                redis_client = db_manager.get_redis_client()
-                cassandra_session = db_manager.get_cassandra_session()
-                
-                sensor_repo = SensorRepository(mongo_db)
-                measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-                alert_repo = AlertRepository(mongo_db, redis_client)
-                alert_service = AlertService(alert_repo)
-                user_repo = UserRepository(mongo_db, neo4j_driver)
-                sensor_service = SensorService(
-                    sensor_repo,
-                    measurement_repo,
-                    alert_service,
-                    alert_rule_service=None,
-                    user_repo=user_repo
-                )
-                
-                sensor_service.update_sensor(sensor.id, sensor_update)
+                self.sensor_controller.update_sensor(sensor.id, sensor_update)
                 QMessageBox.information(self, "Éxito", "Sensor actualizado exitosamente")
                 self.load_sensors()
             except Exception as e:
@@ -518,9 +454,7 @@ class SensorsWidget(QWidget):
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                mongo_db = db_manager.get_mongo_db()
-                sensor_repo = SensorRepository(mongo_db)
-                sensor_repo.delete(sensor.id)
+                self.sensor_controller.delete_sensor(sensor.id)
                 QMessageBox.information(self, "Éxito", "Sensor eliminado exitosamente")
                 self.load_sensors()
             except Exception as e:
@@ -528,5 +462,5 @@ class SensorsWidget(QWidget):
     
     def view_sensor_measurements(self, sensor: Sensor):
         """Open dialog to view measurements for a sensor"""
-        dialog = SensorMeasurementsDialog(self, sensor)
+        dialog = SensorMeasurementsDialog(self, sensor, controller=self.sensor_controller)
         dialog.exec()

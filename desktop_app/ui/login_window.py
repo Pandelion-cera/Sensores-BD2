@@ -8,10 +8,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from typing import Optional, Dict, Any
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.repositories.session_repository import SessionRepository
-from desktop_app.services.auth_service import AuthService
+from desktop_app.controllers import get_auth_controller
 from desktop_app.models.user_models import UserCreate, UserLogin
 from desktop_app.utils.session_manager import SessionManager
 
@@ -26,15 +23,7 @@ class LoginWindow(QDialog):
         self.setMinimumHeight(350)
         
         self.session_manager = SessionManager.get_instance()
-        
-        # Initialize services
-        mongo_db = db_manager.get_mongo_db()
-        redis_client = db_manager.get_redis_client()
-        neo4j_driver = db_manager.get_neo4j_driver()
-        
-        user_repo = UserRepository(mongo_db, neo4j_driver)
-        session_repo = SessionRepository(redis_client, mongo_db)
-        self.auth_service = AuthService(user_repo, session_repo)
+        self.auth_controller = get_auth_controller()
         
         self.result_data: Optional[Dict[str, Any]] = None
         
@@ -146,7 +135,7 @@ class LoginWindow(QDialog):
         
         try:
             login_data = UserLogin(email=email, password=password)
-            result = self.auth_service.login(login_data)
+            result = self.auth_controller.login(login_data)
             
             # Store in session manager
             self.session_manager.set_session(
@@ -183,7 +172,7 @@ class LoginWindow(QDialog):
                 email=email,
                 password=password
             )
-            result = self.auth_service.register(user_data)
+            result = self.auth_controller.register(user_data)
             QMessageBox.information(
                 self,
                 "Registro Exitoso",

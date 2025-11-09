@@ -11,25 +11,11 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QDateTime, QTime
 from datetime import datetime
 from typing import Any, Dict, Optional
+import logging
 import json
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.process_repository import ProcessRepository
-from desktop_app.repositories.measurement_repository import MeasurementRepository
-from desktop_app.repositories.sensor_repository import SensorRepository
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.repositories.invoice_repository import InvoiceRepository
-from desktop_app.repositories.account_repository import AccountRepository
-from desktop_app.repositories.alert_repository import AlertRepository
-from desktop_app.repositories.alert_rule_repository import AlertRuleRepository
-from desktop_app.services.account_service import AccountService
-from desktop_app.services.alert_service import AlertService
-from desktop_app.services.alert_rule_service import AlertRuleService
-from desktop_app.repositories.scheduled_process_repository import ScheduledProcessRepository
-from desktop_app.services.process_service import ProcessService
-from desktop_app.services.scheduled_process_service import ScheduledProcessService
+from desktop_app.controllers import get_process_controller
 from desktop_app.utils.session_manager import SessionManager
-from desktop_app.core.config import settings
 from desktop_app.models.process_models import ProcessRequestCreate, ProcessStatus, Process, Execution, ProcessType
 from desktop_app.models.scheduled_process_models import (
     ScheduledProcessCreate, ScheduledProcessUpdate, ScheduleType, ScheduleStatus
@@ -672,6 +658,7 @@ class ProcessesWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.session_manager = SessionManager.get_instance()
+        self.process_controller = get_process_controller()
         self.init_ui()
         self.load_processes()
     
@@ -798,35 +785,7 @@ class ProcessesWidget(QWidget):
     
     def load_processes(self):
         try:
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            cassandra_session = db_manager.get_cassandra_session()
-            
-            process_repo = ProcessRepository(mongo_db, neo4j_driver)
-            measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-            sensor_repo = SensorRepository(mongo_db)
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            invoice_repo = InvoiceRepository(mongo_db)
-            account_repo = AccountRepository(mongo_db)
-            account_service = AccountService(account_repo)
-            redis_client = db_manager.get_redis_client()
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            alert_service = AlertService(alert_repo)
-            alert_rule_repo = AlertRuleRepository(mongo_db)
-            alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
-            process_service = ProcessService(
-                process_repo,
-                measurement_repo,
-                sensor_repo,
-                user_repo,
-                invoice_repo,
-                account_service,
-                alert_service,
-                alert_rule_service
-            )
-            
-            # Load available processes
-            processes = process_service.get_all_processes(skip=0, limit=100)
+            processes = self.process_controller.list_processes(skip=0, limit=100)
             self.processes_table.setRowCount(len(processes))
             for row, process in enumerate(processes):
                 self.processes_table.setItem(row, 0, QTableWidgetItem(str(process.id)))
@@ -834,98 +793,55 @@ class ProcessesWidget(QWidget):
                 self.processes_table.setItem(row, 2, QTableWidgetItem(process.tipo.value if process.tipo else ""))
                 self.processes_table.setItem(row, 3, QTableWidgetItem(process.descripcion or ""))
                 self.processes_table.setItem(row, 4, QTableWidgetItem(f"${process.costo:.2f}"))
-            
-            # Load scheduled processes
+
             self.load_scheduled_processes()
-            
-            # Load user requests
+
             user_id = self.session_manager.get_user_id()
             if user_id:
-                requests = process_service.get_user_requests(user_id, skip=0, limit=100)
+                requests = self.process_controller.get_user_requests(user_id, skip=0, limit=100)
                 self.requests_table.setRowCount(len(requests))
                 for row, request in enumerate(requests):
-                    # Ensure request.id exists and is valid
-                    request_id = request.id if request.id else None
+                    request_id = request.id
                     if not request_id:
                         import logging
-                        logger = logging.getLogger(__name__)
-                        logger.warning(f"Request at row {row} has no ID: {request}")
+                        logging.getLogger(__name__).warning("Process request without id: %s", request)
                         continue
-                    
+
                     self.requests_table.setItem(row, 0, QTableWidgetItem(str(request_id)))
                     self.requests_table.setItem(row, 1, QTableWidgetItem(str(request.process_id)))
                     self.requests_table.setItem(row, 2, QTableWidgetItem(request.estado.value if request.estado else ""))
-                    
-                    # Get execution date if completed
+
                     fecha_str = ""
                     if request.estado and request.estado.value == "completado":
-                        # Try to get execution date
-                        if request_id:
-                            execution = process_service.get_execution(request_id)
-                            if execution and execution.fecha_ejecucion:
-                                if isinstance(execution.fecha_ejecucion, datetime):
-                                    fecha_str = execution.fecha_ejecucion.strftime("%Y-%m-%d %H:%M:%S")
-                                else:
-                                    fecha_str = str(execution.fecha_ejecucion)
-                        # Fallback to request date if no execution found
+                        execution = self.process_controller.get_execution(request_id)
+                        if execution and execution.fecha_ejecucion:
+                            fecha_val = execution.fecha_ejecucion
+                            if isinstance(fecha_val, datetime):
+                                fecha_str = fecha_val.strftime("%Y-%m-%d %H:%M:%S")
+                            else:
+                                fecha_str = str(fecha_val)
                         if not fecha_str and request.fecha_solicitud:
-                            if isinstance(request.fecha_solicitud, datetime):
-                                fecha_str = request.fecha_solicitud.strftime("%Y-%m-%d %H:%M:%S")
-                            else:
-                                fecha_str = str(request.fecha_solicitud)
-                    else:
-                        # Show request date for pending/in-progress requests
-                        if request.fecha_solicitud:
-                            if isinstance(request.fecha_solicitud, datetime):
-                                fecha_str = request.fecha_solicitud.strftime("%Y-%m-%d %H:%M:%S")
-                            else:
-                                fecha_str = str(request.fecha_solicitud)
-                    
+                            fecha_val = request.fecha_solicitud
+                            fecha_str = fecha_val.strftime("%Y-%m-%d %H:%M:%S") if isinstance(fecha_val, datetime) else str(fecha_val)
+                    elif request.fecha_solicitud:
+                        fecha_val = request.fecha_solicitud
+                        fecha_str = fecha_val.strftime("%Y-%m-%d %H:%M:%S") if isinstance(fecha_val, datetime) else str(fecha_val)
+
                     self.requests_table.setItem(row, 3, QTableWidgetItem(fecha_str))
-                    
                     params_text = str(request.parametros) if request.parametros else ""
                     self.requests_table.setItem(row, 4, QTableWidgetItem(params_text))
             else:
                 self.requests_table.setRowCount(0)
-            
-            # Load all requests for técnicos/admins
-            user_role = self.session_manager.get_user_role()
-            if user_role in ["administrador", "tecnico"]:
+
+            if self.session_manager.get_user_role() in ["administrador", "tecnico"]:
                 self.load_all_requests()
-                
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error al cargar procesos: {str(e)}")
     
     def load_all_requests(self):
         """Load all requests for técnicos/admins"""
         try:
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            cassandra_session = db_manager.get_cassandra_session()
-            
-            process_repo = ProcessRepository(mongo_db, neo4j_driver)
-            measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-            sensor_repo = SensorRepository(mongo_db)
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            invoice_repo = InvoiceRepository(mongo_db)
-            account_repo = AccountRepository(mongo_db)
-            account_service = AccountService(account_repo)
-            redis_client = db_manager.get_redis_client()
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            alert_service = AlertService(alert_repo)
-            alert_rule_repo = AlertRuleRepository(mongo_db)
-            alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
-            process_service = ProcessService(
-                process_repo,
-                measurement_repo,
-                sensor_repo,
-                user_repo,
-                invoice_repo,
-                account_service,
-                alert_service,
-                alert_rule_service
-            )
-            
             # Get status filter
             status_filter = None
             filter_text = self.status_filter.currentText()
@@ -939,7 +855,7 @@ class ProcessesWidget(QWidget):
                 status_filter = ProcessStatus.FAILED
             
             # Load all requests
-            all_requests = process_service.get_all_requests(status=status_filter, skip=0, limit=100)
+            all_requests = self.process_controller.list_all_requests(status=status_filter, skip=0, limit=100)
             self.all_requests_table.setRowCount(len(all_requests))
             
             for row, request in enumerate(all_requests):
@@ -1005,10 +921,7 @@ class ProcessesWidget(QWidget):
                 return
             
             # Get process details
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            process_repo = ProcessRepository(mongo_db, neo4j_driver)
-            process = process_repo.get_process(process_id)
+            process = self.process_controller.get_process(process_id)
             
             if not process:
                 QMessageBox.warning(self, "Error", "Proceso no encontrado")
@@ -1023,32 +936,11 @@ class ProcessesWidget(QWidget):
             parametros = dialog.get_parametros()
             
             # Create the request
-            cassandra_session = db_manager.get_cassandra_session()
-            measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-            sensor_repo = SensorRepository(mongo_db)
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            invoice_repo = InvoiceRepository(mongo_db)
-            redis_client = db_manager.get_redis_client()
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            alert_service = AlertService(alert_repo)
-            alert_rule_repo = AlertRuleRepository(mongo_db)
-            alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
-            process_service = ProcessService(
-                process_repo,
-                measurement_repo,
-                sensor_repo,
-                user_repo,
-                invoice_repo,
-                None,
-                alert_service,
-                alert_rule_service
-            )
-            
             request_data = ProcessRequestCreate(
                 process_id=process_id,
                 parametros=parametros
             )
-            process_service.request_process(user_id, request_data)
+            self.process_controller.request_process(user_id, request_data)
             QMessageBox.information(self, "Éxito", "Solicitud de proceso enviada exitosamente")
             self.load_processes()
         except Exception as e:
@@ -1082,38 +974,13 @@ class ProcessesWidget(QWidget):
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                mongo_db = db_manager.get_mongo_db()
-                neo4j_driver = db_manager.get_neo4j_driver()
-                cassandra_session = db_manager.get_cassandra_session()
-                
-                process_repo = ProcessRepository(mongo_db, neo4j_driver)
-                measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-                sensor_repo = SensorRepository(mongo_db)
-                user_repo = UserRepository(mongo_db, neo4j_driver)
-                invoice_repo = InvoiceRepository(mongo_db)
-                redis_client = db_manager.get_redis_client()
-                alert_repo = AlertRepository(mongo_db, redis_client)
-                alert_service = AlertService(alert_repo)
-                alert_rule_repo = AlertRuleRepository(mongo_db)
-                alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
-                process_service = ProcessService(
-                    process_repo,
-                    measurement_repo,
-                    sensor_repo,
-                    user_repo,
-                    invoice_repo,
-                    None,
-                    alert_service,
-                    alert_rule_service
-                )
-                
-                execution = process_service.execute_process(request_id)
+                execution = self.process_controller.execute_request(request_id)
                 
                 # Get process name for display
-                request_obj = process_service.get_request(request_id)
+                request_obj = self.process_controller.get_request(request_id)
                 process_name = ""
                 if request_obj:
-                    process = process_service.get_process(request_obj.process_id)
+                    process = self.process_controller.get_process(request_obj.process_id)
                     if process:
                         process_name = process.nombre
                 
@@ -1187,35 +1054,8 @@ class ProcessesWidget(QWidget):
         logger.info(f"Viewing results for request_id: {request_id}")
         
         try:
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            cassandra_session = db_manager.get_cassandra_session()
-            
-            process_repo = ProcessRepository(mongo_db, neo4j_driver)
-            measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-            sensor_repo = SensorRepository(mongo_db)
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            invoice_repo = InvoiceRepository(mongo_db)
-            account_repo = AccountRepository(mongo_db)
-            account_service = AccountService(account_repo)
-            redis_client = db_manager.get_redis_client()
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            alert_service = AlertService(alert_repo)
-            alert_rule_repo = AlertRuleRepository(mongo_db)
-            alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
-            process_service = ProcessService(
-                process_repo,
-                measurement_repo,
-                sensor_repo,
-                user_repo,
-                invoice_repo,
-                account_service,
-                alert_service,
-                alert_rule_service
-            )
-            
             # Get execution
-            execution = process_service.get_execution(request_id)
+            execution = self.process_controller.get_execution(request_id)
             if not execution:
                 QMessageBox.warning(self, "Error", "No se encontraron resultados de ejecución para esta solicitud")
                 return
@@ -1233,10 +1073,10 @@ class ProcessesWidget(QWidget):
                 return
             
             # Get process name
-            request_obj = process_service.get_request(request_id)
+            request_obj = self.process_controller.get_request(request_id)
             process_name = ""
             if request_obj:
-                process = process_service.get_process(request_obj.process_id)
+                process = self.process_controller.get_process(request_obj.process_id)
                 if process:
                     process_name = process.nombre
             
@@ -1256,20 +1096,12 @@ class ProcessesWidget(QWidget):
                 self.scheduled_table.setRowCount(0)
                 return
             
-            mongo_db = db_manager.get_mongo_db()
-            schedule_repo = ScheduledProcessRepository(mongo_db)
-            schedule_service = ScheduledProcessService(schedule_repo)
-            
-            schedules = schedule_service.get_user_schedules(user_id, skip=0, limit=100)
-            
-            # Get process names
-            neo4j_driver = db_manager.get_neo4j_driver()
-            process_repo = ProcessRepository(mongo_db, neo4j_driver)
+            schedules = self.process_controller.list_schedules(user_id, skip=0, limit=100)
             
             self.scheduled_table.setRowCount(len(schedules))
             for row, schedule in enumerate(schedules):
                 # Get process name
-                process = process_repo.get_process(schedule.process_id)
+                process = self.process_controller.get_process(schedule.process_id)
                 process_name = process.nombre if process else f"Proceso {schedule.process_id[:8]}"
                 
                 # Schedule type
@@ -1337,28 +1169,24 @@ class ProcessesWidget(QWidget):
     
     def show_schedule_dialog(self):
         """Show dialog to create a new scheduled process"""
-        dialog = ScheduleProcessDialog(self)
+        dialog = ScheduleProcessDialog(self, controller=self.process_controller)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_scheduled_processes()
     
     def edit_schedule(self, schedule):
         """Edit an existing scheduled process"""
-        dialog = EditScheduleDialog(schedule, self)
+        dialog = EditScheduleDialog(schedule, self, controller=self.process_controller)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_scheduled_processes()
     
     def pause_resume_schedule(self, schedule):
         """Pause or resume a scheduled process"""
         try:
-            mongo_db = db_manager.get_mongo_db()
-            schedule_repo = ScheduledProcessRepository(mongo_db)
-            schedule_service = ScheduledProcessService(schedule_repo)
-            
             if schedule.status == ScheduleStatus.ACTIVE:
-                schedule_service.pause_schedule(schedule.id)
+                self.process_controller.pause_schedule(schedule.id)
                 QMessageBox.information(self, "Éxito", "Proceso programado pausado")
             else:
-                schedule_service.resume_schedule(schedule.id)
+                self.process_controller.resume_schedule(schedule.id)
                 QMessageBox.information(self, "Éxito", "Proceso programado reanudado")
             
             self.load_scheduled_processes()
@@ -1377,11 +1205,7 @@ class ProcessesWidget(QWidget):
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                mongo_db = db_manager.get_mongo_db()
-                schedule_repo = ScheduledProcessRepository(mongo_db)
-                schedule_service = ScheduledProcessService(schedule_repo)
-                
-                schedule_service.delete_schedule(schedule.id)
+                self.process_controller.delete_schedule(schedule.id)
                 QMessageBox.information(self, "Éxito", "Proceso programado eliminado")
                 self.load_scheduled_processes()
             
@@ -1392,8 +1216,9 @@ class ProcessesWidget(QWidget):
 class ScheduleProcessDialog(QDialog):
     """Dialog for creating a new scheduled process"""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, controller=None):
         super().__init__(parent)
+        self.process_controller = controller or get_process_controller()
         self.setWindowTitle("Programar Proceso")
         self.setMinimumWidth(500)
         self.schedule_data = None
@@ -1505,34 +1330,7 @@ class ScheduleProcessDialog(QDialog):
     def load_processes(self):
         """Load available processes"""
         try:
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            cassandra_session = db_manager.get_cassandra_session()
-            
-            process_repo = ProcessRepository(mongo_db, neo4j_driver)
-            measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-            sensor_repo = SensorRepository(mongo_db)
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            invoice_repo = InvoiceRepository(mongo_db)
-            account_repo = AccountRepository(mongo_db)
-            account_service = AccountService(account_repo)
-            redis_client = db_manager.get_redis_client()
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            alert_service = AlertService(alert_repo)
-            alert_rule_repo = AlertRuleRepository(mongo_db)
-            alert_rule_service = AlertRuleService(alert_rule_repo, alert_repo)
-            process_service = ProcessService(
-                process_repo,
-                measurement_repo,
-                sensor_repo,
-                user_repo,
-                invoice_repo,
-                account_service,
-                alert_service,
-                alert_rule_service
-            )
-            
-            processes = process_service.get_all_processes(skip=0, limit=100)
+            processes = self.process_controller.list_processes(skip=0, limit=100)
             
             self.process_combo.clear()
             for process in processes:
@@ -1661,11 +1459,7 @@ class ScheduleProcessDialog(QDialog):
                 QMessageBox.warning(self, "Error", "Usuario no conectado")
                 return
             
-            mongo_db = db_manager.get_mongo_db()
-            schedule_repo = ScheduledProcessRepository(mongo_db)
-            schedule_service = ScheduledProcessService(schedule_repo)
-            
-            schedule_service.create_schedule(user_id, schedule_data)
+            self.process_controller.create_schedule(user_id, schedule_data)
             
             QMessageBox.information(self, "Éxito", "Proceso programado correctamente")
             self.accept()
@@ -1677,19 +1471,16 @@ class ScheduleProcessDialog(QDialog):
 class EditScheduleDialog(ScheduleProcessDialog):
     """Dialog for editing an existing scheduled process"""
     
-    def __init__(self, schedule, parent=None):
+    def __init__(self, schedule, parent=None, controller=None):
         self.schedule = schedule
-        super().__init__(parent)
+        super().__init__(parent, controller=controller)
         self.setWindowTitle("Editar Proceso Programado")
         self.load_schedule_data()
     
     def load_schedule_data(self):
         """Load existing schedule data into the form"""
         # Load process
-        mongo_db = db_manager.get_mongo_db()
-        neo4j_driver = db_manager.get_neo4j_driver()
-        process_repo = ProcessRepository(mongo_db, neo4j_driver)
-        process = process_repo.get_process(self.schedule.process_id)
+        process = self.process_controller.get_process(self.schedule.process_id)
         
         if process:
             index = self.process_combo.findData(process.id)
@@ -1802,11 +1593,7 @@ class EditScheduleDialog(ScheduleProcessDialog):
                 schedule_config=schedule_config
             )
             
-            mongo_db = db_manager.get_mongo_db()
-            schedule_repo = ScheduledProcessRepository(mongo_db)
-            schedule_service = ScheduledProcessService(schedule_repo)
-            
-            schedule_service.update_schedule(self.schedule.id, update_data)
+            self.process_controller.update_schedule(self.schedule.id, update_data)
             
             QMessageBox.information(self, "Éxito", "Proceso programado actualizado correctamente")
             self.accept()

@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction
 
+from desktop_app.controllers import get_auth_controller
 from desktop_app.utils.session_manager import SessionManager
 from desktop_app.ui.dashboard_widget import DashboardWidget
 from desktop_app.ui.sensors_widget import SensorsWidget
@@ -39,6 +40,7 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1000, 700)
         
         self.session_manager = SessionManager.get_instance()
+        self.auth_controller = get_auth_controller()
         
         self.init_ui()
         self.update_status()
@@ -270,19 +272,7 @@ class MainWindow(QMainWindow):
             return
         
         try:
-            from desktop_app.services.auth_service import AuthService
-            from desktop_app.core.database import db_manager
-            from desktop_app.repositories.user_repository import UserRepository
-            from desktop_app.repositories.session_repository import SessionRepository
-            
-            mongo_db = db_manager.get_mongo_db()
-            redis_client = db_manager.get_redis_client()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            session_repo = SessionRepository(redis_client, mongo_db)
-            auth_service = AuthService(user_repo, session_repo)
-            auth_service.logout(session_id)
+            self.auth_controller.logout(session_id)
         except Exception as exc:
             if not silent:
                 QMessageBox.warning(

@@ -11,25 +11,17 @@ from PyQt6.QtCore import Qt, QDate
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.sensor_repository import SensorRepository
-from desktop_app.repositories.measurement_repository import MeasurementRepository
-from desktop_app.repositories.alert_repository import AlertRepository
-from desktop_app.repositories.alert_rule_repository import AlertRuleRepository
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.services.sensor_service import SensorService
-from desktop_app.services.alert_service import AlertService
-from desktop_app.services.alert_rule_service import AlertRuleService
+from desktop_app.controllers import get_sensor_controller
 from desktop_app.models.measurement_models import MeasurementCreate
 from desktop_app.models.sensor_models import SensorStatus
-from desktop_app.core.config import settings
 
 
 class MeasurementDialog(QDialog):
     """Dialog for creating a new measurement"""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, controller=None):
         super().__init__(parent)
+        self.sensor_controller = controller or get_sensor_controller()
         self.setWindowTitle("Agregar Medición")
         self.setMinimumWidth(400)
         self.init_ui()
@@ -85,9 +77,11 @@ class MeasurementDialog(QDialog):
     def load_sensors(self):
         """Load active sensors into the combo box"""
         try:
-            mongo_db = db_manager.get_mongo_db()
-            sensor_repo = SensorRepository(mongo_db)
-            sensors = sensor_repo.get_all(skip=0, limit=1000, estado=SensorStatus.ACTIVE)
+            sensors = self.sensor_controller.list_sensors(
+                skip=0,
+                limit=1000,
+                estado=SensorStatus.ACTIVE,
+            )
             
             self.sensor_combo.clear()
             for sensor in sensors:
@@ -146,6 +140,7 @@ class MeasurementsWidget(QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.sensor_controller = get_sensor_controller()
         self.init_ui()
     
     def init_ui(self):
@@ -237,37 +232,11 @@ class MeasurementsWidget(QWidget):
     
     def add_measurement(self):
         """Open dialog to add a new measurement"""
-        dialog = MeasurementDialog(self)
+        dialog = MeasurementDialog(self, controller=self.sensor_controller)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             try:
                 sensor_id, measurement_data = dialog.get_data()
-                
-                # Get services
-                mongo_db = db_manager.get_mongo_db()
-                cassandra_session = db_manager.get_cassandra_session()
-                redis_client = db_manager.get_redis_client()
-                neo4j_driver = db_manager.get_neo4j_driver()
-                
-                sensor_repo = SensorRepository(mongo_db)
-                measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-                alert_repo = AlertRepository(mongo_db, redis_client)
-                alert_service = AlertService(alert_repo)
-                
-                # Initialize alert rule service if available
-                rule_repo = AlertRuleRepository(mongo_db)
-                alert_rule_service = AlertRuleService(rule_repo, alert_repo)
-                
-                user_repo = UserRepository(mongo_db, neo4j_driver)
-                sensor_service = SensorService(
-                    sensor_repo,
-                    measurement_repo,
-                    alert_service,
-                    alert_rule_service=alert_rule_service,
-                    user_repo=user_repo
-                )
-                
-                # Register the measurement
-                result = sensor_service.register_measurement(sensor_id, measurement_data)
+                result = self.sensor_controller.register_measurement(sensor_id, measurement_data)
                 
                 triggered = result.get("triggered_alerts", [])
                 temp_display = (
@@ -333,26 +302,7 @@ class MeasurementsWidget(QWidget):
             start_date = datetime(start_qdate.year(), start_qdate.month(), start_qdate.day())
             end_date = datetime(end_qdate.year(), end_qdate.month(), end_qdate.day(), 23, 59, 59)
             
-            # Get measurements
-            mongo_db = db_manager.get_mongo_db()
-            cassandra_session = db_manager.get_cassandra_session()
-            redis_client = db_manager.get_redis_client()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            sensor_repo = SensorRepository(mongo_db)
-            measurement_repo = MeasurementRepository(cassandra_session, settings.CASSANDRA_KEYSPACE)
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            alert_service = AlertService(alert_repo)
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            sensor_service = SensorService(
-                sensor_repo,
-                measurement_repo,
-                alert_service,
-                alert_rule_service=None,
-                user_repo=user_repo
-            )
-            
-            measurements = sensor_service.get_location_measurements(
+            measurements = self.sensor_controller.get_location_measurements(
                 pais=country,
                 ciudad=city,
                 start_date=start_date,

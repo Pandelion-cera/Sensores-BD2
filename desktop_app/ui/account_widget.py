@@ -11,14 +11,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from datetime import datetime
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.invoice_repository import InvoiceRepository
-from desktop_app.repositories.account_repository import AccountRepository
-from desktop_app.repositories.payment_repository import PaymentRepository
-from desktop_app.repositories.process_repository import ProcessRepository
-from desktop_app.services.invoice_service import InvoiceService
-from desktop_app.services.account_service import AccountService
-from desktop_app.services.payment_service import PaymentService
+from desktop_app.controllers import get_account_controller
 from desktop_app.utils.session_manager import SessionManager
 from desktop_app.models.invoice_models import InvoiceStatus, PaymentMethod, PaymentCreate
 
@@ -108,6 +101,7 @@ class AccountWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.session_manager = SessionManager.get_instance()
+        self.account_controller = get_account_controller()
         self.init_ui()
         self.load_account()
     
@@ -209,21 +203,8 @@ class AccountWidget(QWidget):
                 QMessageBox.warning(self, "Error", "Usuario no conectado")
                 return
             
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            # Initialize repositories and services
-            account_repo = AccountRepository(mongo_db)
-            invoice_repo = InvoiceRepository(mongo_db)
-            payment_repo = PaymentRepository(mongo_db)
-            process_repo = ProcessRepository(mongo_db, neo4j_driver)
-            
-            account_service = AccountService(account_repo)
-            invoice_service = InvoiceService(invoice_repo, process_repo, account_service)
-            payment_service = PaymentService(payment_repo, invoice_repo, account_repo)
-            
             # Load account
-            account = account_service.get_account(user_id)
+            account = self.account_controller.get_account(user_id)
             
             # Update balance label
             if account:
@@ -238,7 +219,7 @@ class AccountWidget(QWidget):
                 )
                 
                 # Load movements
-                movements = account_service.get_movements(user_id, skip=0, limit=100)
+                movements = self.account_controller.list_movements(user_id, skip=0, limit=100)
                 self.movements_table.setRowCount(len(movements))
                 for row, movement in enumerate(movements):
                     # Date
@@ -280,8 +261,7 @@ class AccountWidget(QWidget):
                 self.movements_table.setRowCount(0)
             
             # Load pending invoices
-            invoices = invoice_service.get_user_invoices(user_id, skip=0, limit=100)
-            pending_invoices = [inv for inv in invoices if inv.estado == InvoiceStatus.PENDING]
+            pending_invoices = self.account_controller.list_pending_invoices(user_id, skip=0, limit=100)
             
             self.invoices_table.setRowCount(len(pending_invoices))
             for row, invoice in enumerate(pending_invoices):
@@ -340,20 +320,8 @@ class AccountWidget(QWidget):
                 payment_data = dialog.get_payment_data()
                 
                 # Initialize services
-                mongo_db = db_manager.get_mongo_db()
-                neo4j_driver = db_manager.get_neo4j_driver()
-                
-                invoice_repo = InvoiceRepository(mongo_db)
-                payment_repo = PaymentRepository(mongo_db)
-                account_repo = AccountRepository(mongo_db)
-                process_repo = ProcessRepository(mongo_db, neo4j_driver)
-                
-                account_service = AccountService(account_repo)
-                invoice_service = InvoiceService(invoice_repo, process_repo, account_service)
-                payment_service = PaymentService(payment_repo, invoice_repo, account_repo)
-                
                 # Process payment
-                payment = payment_service.create_payment(invoice.id, payment_data)
+                payment = self.account_controller.pay_invoice(invoice.id, payment_data)
                 
                 QMessageBox.information(
                     self,
@@ -385,15 +353,10 @@ class AccountWidget(QWidget):
                     QMessageBox.warning(self, "Error", "El monto debe ser mayor a 0")
                     return
                 
-                # Initialize services
-                mongo_db = db_manager.get_mongo_db()
-                account_repo = AccountRepository(mongo_db)
-                account_service = AccountService(account_repo)
-                
                 user_id = self.session_manager.get_user_id()
                 
                 # Add balance (abono - increases balance)
-                account_service.add_payment(
+                self.account_controller.add_balance(
                     user_id,
                     amount,
                     "Depósito de saldo",

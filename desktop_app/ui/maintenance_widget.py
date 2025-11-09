@@ -12,11 +12,7 @@ from PyQt6.QtGui import QColor
 from datetime import datetime
 from typing import Optional
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.maintenance_repository import MaintenanceRepository
-from desktop_app.repositories.sensor_repository import SensorRepository
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.services.maintenance_service import MaintenanceService
+from desktop_app.controllers import get_maintenance_controller, get_sensor_controller
 from desktop_app.utils.session_manager import SessionManager
 from desktop_app.models.maintenance_models import (
     MaintenanceRecord, MaintenanceRecordCreate, MaintenanceStatus
@@ -26,10 +22,12 @@ from desktop_app.models.maintenance_models import (
 class MaintenanceRecordDialog(QDialog):
     """Dialog for creating/editing maintenance records"""
     
-    def __init__(self, parent=None, sensor_id: Optional[str] = None, record: Optional[MaintenanceRecord] = None):
+    def __init__(self, parent=None, sensor_id: Optional[str] = None, record: Optional[MaintenanceRecord] = None, controller=None):
         super().__init__(parent)
         self.record = record
         self.sensor_id = sensor_id or (record.sensor_id if record else None)
+        self.maintenance_controller = controller or get_maintenance_controller()
+        self.sensor_controller = get_sensor_controller()
         self.setWindowTitle("Editar Registro" if record else "Nuevo Registro de Control")
         self.setMinimumWidth(500)
         self.init_ui()
@@ -44,9 +42,7 @@ class MaintenanceRecordDialog(QDialog):
         
         # Sensor selection (only if creating new record)
         if not self.record:
-            mongo_db = db_manager.get_mongo_db()
-            sensor_repo = SensorRepository(mongo_db)
-            sensors = sensor_repo.get_all()
+            sensors = self.sensor_controller.list_sensors(limit=1000)
             
             self.sensor_combo = QComboBox()
             for sensor in sensors:
@@ -151,6 +147,8 @@ class MaintenanceWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.session_manager = SessionManager.get_instance()
+        self.maintenance_controller = get_maintenance_controller()
+        self.sensor_controller = get_sensor_controller()
         self.init_ui()
         self.load_records()
     
@@ -193,29 +191,19 @@ class MaintenanceWidget(QWidget):
     def load_records(self):
         """Load maintenance records"""
         try:
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            maintenance_repo = MaintenanceRepository(mongo_db)
-            sensor_repo = SensorRepository(mongo_db)
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            
-            maintenance_service = MaintenanceService(maintenance_repo, sensor_repo, user_repo)
-            
             # Get user role to determine what records to show
             user_role = self.session_manager.get_user_role()
             user_id = self.session_manager.get_user_id()
             
             if user_role in ["administrador", "tecnico"]:
                 # Admins and technicians see all records
-                records = maintenance_service.get_all(skip=0, limit=100)
+                records = self.maintenance_controller.list_records(skip=0, limit=100)
             else:
                 # Regular users don't have access
                 records = []
             
             # Get sensors and users for display
-            sensors = {s.id: s for s in sensor_repo.get_all()}
-            users = {u.id: u for u in user_repo.get_all(skip=0, limit=1000)}
+            sensors = {s.id: s for s in self.sensor_controller.list_sensors(limit=1000)}
             
             self.table.setRowCount(len(records))
             for row, record in enumerate(records):
@@ -227,7 +215,7 @@ class MaintenanceWidget(QWidget):
                 self.table.setItem(row, 1, QTableWidgetItem(sensor_name))
                 
                 # Technician name
-                tecnico = users.get(record.tecnico_id)
+                tecnico = self.maintenance_controller.get_user(record.tecnico_id)
                 tecnico_name = tecnico.nombre_completo if tecnico else record.tecnico_id
                 self.table.setItem(row, 2, QTableWidgetItem(tecnico_name))
                 
@@ -290,20 +278,14 @@ class MaintenanceWidget(QWidget):
     def create_record(self, sensor_id: Optional[str] = None):
         """Create a new maintenance record"""
         try:
-            dialog = MaintenanceRecordDialog(self, sensor_id=sensor_id)
+            dialog = MaintenanceRecordDialog(
+                self,
+                sensor_id=sensor_id,
+                controller=self.maintenance_controller,
+            )
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 record_data = dialog.get_record_data()
-                
-                mongo_db = db_manager.get_mongo_db()
-                neo4j_driver = db_manager.get_neo4j_driver()
-                
-                maintenance_repo = MaintenanceRepository(mongo_db)
-                sensor_repo = SensorRepository(mongo_db)
-                user_repo = UserRepository(mongo_db, neo4j_driver)
-                
-                maintenance_service = MaintenanceService(maintenance_repo, sensor_repo, user_repo)
-                
-                maintenance_service.create_record(record_data)
+                self.maintenance_controller.create_record(record_data)
                 
                 QMessageBox.information(self, "Éxito", "Registro de control creado exitosamente")
                 self.load_records()
@@ -317,12 +299,8 @@ class MaintenanceWidget(QWidget):
     def view_record(self, record: MaintenanceRecord):
         """View maintenance record details"""
         try:
-            mongo_db = db_manager.get_mongo_db()
-            sensor_repo = SensorRepository(mongo_db)
-            user_repo = UserRepository(mongo_db, db_manager.get_neo4j_driver())
-            
-            sensor = sensor_repo.get_by_id(record.sensor_id)
-            tecnico = user_repo.get_by_id(record.tecnico_id)
+            sensor = self.maintenance_controller.get_sensor(record.sensor_id)
+            tecnico = self.maintenance_controller.get_user(record.tecnico_id)
             
             details = f"""
             <b>ID:</b> {record.id}<br>
@@ -343,18 +321,9 @@ class MaintenanceWidget(QWidget):
     def edit_record(self, record: MaintenanceRecord):
         """Edit maintenance record"""
         try:
-            dialog = MaintenanceRecordDialog(self, record=record)
+            dialog = MaintenanceRecordDialog(self, record=record, controller=self.maintenance_controller)
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 record_data = dialog.get_record_data()
-                
-                mongo_db = db_manager.get_mongo_db()
-                neo4j_driver = db_manager.get_neo4j_driver()
-                
-                maintenance_repo = MaintenanceRepository(mongo_db)
-                sensor_repo = SensorRepository(mongo_db)
-                user_repo = UserRepository(mongo_db, neo4j_driver)
-                
-                maintenance_service = MaintenanceService(maintenance_repo, sensor_repo, user_repo)
                 
                 from desktop_app.models.maintenance_models import MaintenanceRecordUpdate
                 update_data = MaintenanceRecordUpdate(
@@ -364,7 +333,7 @@ class MaintenanceWidget(QWidget):
                     proxima_revision=record_data.proxima_revision
                 )
                 
-                maintenance_service.update_record(record.id, update_data)
+                self.maintenance_controller.update_record(record.id, update_data)
                 
                 QMessageBox.information(self, "Éxito", "Registro actualizado exitosamente")
                 self.load_records()
@@ -383,16 +352,7 @@ class MaintenanceWidget(QWidget):
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                mongo_db = db_manager.get_mongo_db()
-                neo4j_driver = db_manager.get_neo4j_driver()
-                
-                maintenance_repo = MaintenanceRepository(mongo_db)
-                sensor_repo = SensorRepository(mongo_db)
-                user_repo = UserRepository(mongo_db, neo4j_driver)
-                
-                maintenance_service = MaintenanceService(maintenance_repo, sensor_repo, user_repo)
-                
-                maintenance_service.delete_record(record.id)
+                self.maintenance_controller.delete_record(record.id)
                 
                 QMessageBox.information(self, "Éxito", "Registro eliminado exitosamente")
                 self.load_records()

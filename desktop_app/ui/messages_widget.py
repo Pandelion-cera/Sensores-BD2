@@ -10,13 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from datetime import datetime
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.message_repository import MessageRepository
-from desktop_app.repositories.group_repository import GroupRepository
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.repositories.account_repository import AccountRepository
-from desktop_app.services.message_service import MessageService
-from desktop_app.services.user_service import UserService
+from desktop_app.controllers import get_message_controller
 from desktop_app.models.message_models import MessageCreate, MessageType
 from desktop_app.utils.session_manager import SessionManager
 
@@ -27,6 +21,7 @@ class MessagesWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.session_manager = SessionManager.get_instance()
+        self.message_controller = get_message_controller()
         # Store messages for detail view
         self.private_messages = {}  # row -> MessageResponse
         self.group_messages = {}  # table -> {row -> MessageResponse}
@@ -94,16 +89,8 @@ class MessagesWidget(QWidget):
                 QMessageBox.warning(self, "Error", "Usuario no conectado")
                 return
             
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            message_repo = MessageRepository(mongo_db)
-            group_repo = GroupRepository(mongo_db, neo4j_driver)
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            message_service = MessageService(message_repo, group_repo, user_repo)
-            
             # Get all messages
-            all_messages = message_service.get_all_user_messages(user_id, skip=0, limit=200)
+            all_messages = self.message_controller.get_user_messages(user_id, skip=0, limit=200)
             
             # Load private messages
             private_msgs = all_messages.get("private", [])
@@ -189,7 +176,7 @@ class MessagesWidget(QWidget):
     
     def show_send_dialog(self):
         """Show dialog to send a new message"""
-        dialog = SendMessageDialog(self)
+        dialog = SendMessageDialog(self, controller=self.message_controller)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_messages()  # Refresh messages after sending
     
@@ -216,9 +203,10 @@ class MessagesWidget(QWidget):
 class SendMessageDialog(QDialog):
     """Dialog for sending a new message"""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, controller=None):
         super().__init__(parent)
         self.session_manager = SessionManager.get_instance()
+        self.message_controller = controller or get_message_controller()
         self.setWindowTitle("Enviar Mensaje")
         self.setModal(True)
         self.setMinimumWidth(500)
@@ -288,16 +276,11 @@ class SendMessageDialog(QDialog):
         self.recipient_combo.clear()
         
         try:
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
             user_id = self.session_manager.get_user_id()
             
             if self.private_radio.isChecked():
                 # Load all users for private messages
-                user_repo = UserRepository(mongo_db, neo4j_driver)
-                account_repo = AccountRepository(mongo_db)
-                user_service = UserService(user_repo, account_repo)
-                users = user_service.get_all_users(skip=0, limit=200)
+                users = self.message_controller.list_users(skip=0, limit=200)
                 
                 for user in users:
                     if user.id != user_id:  # Don't show current user
@@ -305,8 +288,7 @@ class SendMessageDialog(QDialog):
                         self.recipient_combo.addItem(display_text, user.email)
             else:
                 # Load user's groups for group messages
-                group_repo = GroupRepository(mongo_db, neo4j_driver)
-                groups = group_repo.get_user_groups(user_id)
+                groups = self.message_controller.list_user_groups(user_id)
                 
                 for group in groups:
                     self.recipient_combo.addItem(group.nombre, group.id)
@@ -354,15 +336,7 @@ class SendMessageDialog(QDialog):
                 QMessageBox.warning(self, "Error", "Usuario no conectado")
                 return
             
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            message_repo = MessageRepository(mongo_db)
-            group_repo = GroupRepository(mongo_db, neo4j_driver)
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            message_service = MessageService(message_repo, group_repo, user_repo)
-            
-            message_service.send_message(user_id, message_data)
+            self.message_controller.send_message(user_id, message_data)
             
             QMessageBox.information(self, "Éxito", "Mensaje enviado correctamente")
             self.accept()

@@ -82,6 +82,7 @@ desktop_app/
 ├── models/                 # Pydantic models
 ├── repositories/           # Data access layer
 ├── services/               # Business logic
+├── controllers/            # Presentation-facing orchestrators (UI entry-points)
 ├── ui/                     # PyQt6 UI components
 │   ├── login_window.py    # Login/register dialog
 │   ├── main_window.py     # Main application window
@@ -90,6 +91,13 @@ desktop_app/
 │   └── session_manager.py # Session management
 └── requirements.txt        # Python dependencies
 ```
+
+### Controller Layer
+
+The desktop UI now talks to the application through `desktop_app/controllers`.  
+Each controller wraps the underlying services/repositories and exposes UI-friendly
+methods with validation and error handling. When adding new screens, depend on a
+controller instead of instantiating repositories or services directly.
 
 ## Troubleshooting
 

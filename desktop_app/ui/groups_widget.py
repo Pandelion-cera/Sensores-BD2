@@ -10,11 +10,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 from datetime import datetime
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.group_repository import GroupRepository
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.repositories.account_repository import AccountRepository
-from desktop_app.services.user_service import UserService
+from desktop_app.controllers import get_group_controller
 from desktop_app.models.group_models import Group, GroupCreate
 from desktop_app.utils.session_manager import SessionManager
 
@@ -25,6 +21,7 @@ class GroupsWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.session_manager = SessionManager.get_instance()
+        self.group_controller = get_group_controller()
         self.init_ui()
         self.load_groups()
     
@@ -66,13 +63,11 @@ class GroupsWidget(QWidget):
     def load_groups(self):
         """Load all groups"""
         try:
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            group_repo = GroupRepository(mongo_db, neo4j_driver)
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            
-            groups = group_repo.get_all(skip=0, limit=100)
+            groups = self.group_controller.list_groups(skip=0, limit=100)
+            users_map = {
+                user.id: user
+                for user in self.group_controller.list_users(skip=0, limit=1000)
+            }
             
             self.table.setRowCount(len(groups))
             for row, group in enumerate(groups):
@@ -82,10 +77,9 @@ class GroupsWidget(QWidget):
                 # Members count and names
                 members_text = f"{len(group.miembros)} miembros"
                 if group.miembros:
-                    # Get member names
                     member_names = []
-                    for user_id in group.miembros[:5]:  # Show first 5
-                        user = user_repo.get_by_id(user_id)
+                    for user_id in group.miembros[:5]:
+                        user = users_map.get(user_id)
                         if user:
                             member_names.append(user.nombre_completo)
                     if member_names:
@@ -130,13 +124,13 @@ class GroupsWidget(QWidget):
     
     def show_create_dialog(self):
         """Show dialog to create a new group"""
-        dialog = CreateGroupDialog(self)
+        dialog = CreateGroupDialog(self, controller=self.group_controller)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_groups()
     
     def show_manage_dialog(self, group: Group):
         """Show dialog to manage group members"""
-        dialog = ManageGroupDialog(group, self)
+        dialog = ManageGroupDialog(group, self, controller=self.group_controller)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_groups()
     
@@ -151,11 +145,7 @@ class GroupsWidget(QWidget):
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                mongo_db = db_manager.get_mongo_db()
-                neo4j_driver = db_manager.get_neo4j_driver()
-                
-                group_repo = GroupRepository(mongo_db, neo4j_driver)
-                success = group_repo.delete(group.id)
+                success = self.group_controller.delete_group(group.id)
                 
                 if success:
                     QMessageBox.information(self, "Éxito", "Grupo eliminado correctamente")
@@ -170,8 +160,9 @@ class GroupsWidget(QWidget):
 class CreateGroupDialog(QDialog):
     """Dialog for creating a new group"""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, controller=None):
         super().__init__(parent)
+        self.group_controller = controller or get_group_controller()
         self.setWindowTitle("Crear Grupo")
         self.setModal(True)
         self.setMinimumWidth(500)
@@ -216,14 +207,7 @@ class CreateGroupDialog(QDialog):
     def load_users(self):
         """Load all users"""
         try:
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            account_repo = AccountRepository(mongo_db)
-            user_service = UserService(user_repo, account_repo)
-            
-            users = user_service.get_all_users(skip=0, limit=200)
+            users = self.group_controller.list_users(skip=0, limit=200)
             
             self.users_list.clear()
             for user in users:
@@ -257,11 +241,7 @@ class CreateGroupDialog(QDialog):
                 miembros=member_ids
             )
             
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            group_repo = GroupRepository(mongo_db, neo4j_driver)
-            group_repo.create(group_data)
+            self.group_controller.create_group(group_data)
             
             QMessageBox.information(self, "Éxito", "Grupo creado correctamente")
             self.accept()
@@ -273,9 +253,10 @@ class CreateGroupDialog(QDialog):
 class ManageGroupDialog(QDialog):
     """Dialog for managing group members"""
     
-    def __init__(self, group: Group, parent=None):
+    def __init__(self, group: Group, parent=None, controller=None):
         super().__init__(parent)
         self.group = group
+        self.group_controller = controller or get_group_controller()
         self.setWindowTitle(f"Gestionar Grupo: {group.nombre}")
         self.setModal(True)
         self.setMinimumWidth(600)
@@ -344,14 +325,8 @@ class ManageGroupDialog(QDialog):
     def load_members(self):
         """Load current group members"""
         try:
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            group_repo = GroupRepository(mongo_db, neo4j_driver)
-            
             # Refresh group data
-            group = group_repo.get_by_id(self.group.id)
+            group = self.group_controller.get_group(self.group.id)
             if not group:
                 QMessageBox.warning(self, "Error", "Grupo no encontrado")
                 self.reject()
@@ -361,7 +336,7 @@ class ManageGroupDialog(QDialog):
             self.members_list.clear()
             
             for user_id in group.miembros:
-                user = user_repo.get_by_id(user_id)
+                user = self.group_controller.get_user(user_id)
                 if user:
                     item = QListWidgetItem(f"{user.nombre_completo} ({user.email})")
                     item.setData(Qt.ItemDataRole.UserRole, user_id)
@@ -373,14 +348,7 @@ class ManageGroupDialog(QDialog):
     def load_available_users(self):
         """Load users not in the group"""
         try:
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            user_repo = UserRepository(mongo_db, neo4j_driver)
-            account_repo = AccountRepository(mongo_db)
-            user_service = UserService(user_repo, account_repo)
-            
-            users = user_service.get_all_users(skip=0, limit=200)
+            users = self.group_controller.list_users(skip=0, limit=200)
             
             self.available_users_list.clear()
             current_member_ids = set(self.group.miembros)
@@ -402,16 +370,11 @@ class ManageGroupDialog(QDialog):
                 QMessageBox.warning(self, "Advertencia", "Seleccione al menos un usuario para agregar")
                 return
             
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            group_repo = GroupRepository(mongo_db, neo4j_driver)
-            
-            added_count = 0
-            for item in selected_items:
-                user_id = item.data(Qt.ItemDataRole.UserRole)
-                if group_repo.add_member(self.group.id, user_id):
-                    added_count += 1
+            user_ids = [
+                item.data(Qt.ItemDataRole.UserRole)
+                for item in selected_items
+            ]
+            added_count = self.group_controller.add_members(self.group.id, user_ids)
             
             if added_count > 0:
                 QMessageBox.information(self, "Éxito", f"{added_count} usuario(s) agregado(s) correctamente")
@@ -441,16 +404,11 @@ class ManageGroupDialog(QDialog):
             if reply != QMessageBox.StandardButton.Yes:
                 return
             
-            mongo_db = db_manager.get_mongo_db()
-            neo4j_driver = db_manager.get_neo4j_driver()
-            
-            group_repo = GroupRepository(mongo_db, neo4j_driver)
-            
-            removed_count = 0
-            for item in selected_items:
-                user_id = item.data(Qt.ItemDataRole.UserRole)
-                if group_repo.remove_member(self.group.id, user_id):
-                    removed_count += 1
+            user_ids = [
+                item.data(Qt.ItemDataRole.UserRole)
+                for item in selected_items
+            ]
+            removed_count = self.group_controller.remove_members(self.group.id, user_ids)
             
             if removed_count > 0:
                 QMessageBox.information(self, "Éxito", f"{removed_count} miembro(s) removido(s) correctamente")

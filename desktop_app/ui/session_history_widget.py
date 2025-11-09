@@ -20,21 +20,14 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.session_repository import SessionRepository
-from desktop_app.repositories.user_repository import UserRepository
+from desktop_app.controllers import get_session_controller
 
 class SessionHistoryWidget(QWidget):
     """Widget that displays historical session activity."""
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self.mongo_db = db_manager.get_mongo_db()
-        self.redis_client = db_manager.get_redis_client()
-        self.neo4j_driver = db_manager.get_neo4j_driver()
-
-        self.session_repo = SessionRepository(self.redis_client, self.mongo_db)
-        self.user_repo = UserRepository(self.mongo_db, self.neo4j_driver)
+        self.session_controller = get_session_controller()
 
         self._users_cache: Dict[str, Dict[str, str]] = {}
 
@@ -93,7 +86,7 @@ class SessionHistoryWidget(QWidget):
         self.user_combo.addItem("Todos los usuarios", None)
 
         try:
-            users = self.user_repo.get_all(skip=0, limit=1000)
+            users = self.session_controller.list_users(skip=0, limit=1000)
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"No se pudieron cargar los usuarios: {exc}")
             return
@@ -111,7 +104,7 @@ class SessionHistoryWidget(QWidget):
         selected_user_id = self.user_combo.currentData()
 
         try:
-            sessions = self.session_repo.get_session_history(
+            sessions = self.session_controller.get_session_history(
                 user_id=selected_user_id,
                 skip=0,
                 limit=200,
@@ -153,7 +146,7 @@ class SessionHistoryWidget(QWidget):
         if not user_id:
             return {}
         try:
-            user = self.user_repo.get_by_id(user_id)
+            user = self.session_controller.get_user(user_id)
         except Exception:
             user = None
 

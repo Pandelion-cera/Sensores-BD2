@@ -7,9 +7,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.sensor_repository import SensorRepository
-from desktop_app.repositories.alert_repository import AlertRepository
+from desktop_app.controllers import get_dashboard_controller
 from desktop_app.utils.session_manager import SessionManager
 
 
@@ -19,6 +17,7 @@ class DashboardWidget(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.session_manager = SessionManager.get_instance()
+        self.dashboard_controller = get_dashboard_controller()
         self.init_ui()
         self.refresh()
     
@@ -65,22 +64,10 @@ class DashboardWidget(QWidget):
     def refresh(self):
         """Refresh dashboard data"""
         try:
-            mongo_db = db_manager.get_mongo_db()
-            redis_client = db_manager.get_redis_client()
-            
-            sensor_repo = SensorRepository(mongo_db)
-            alert_repo = AlertRepository(mongo_db, redis_client)
-            
-            # Get sensor stats
-            all_sensors = sensor_repo.get_all(limit=1000)
-            active_sensors = [s for s in all_sensors if s.estado == "activo"]
-            
-            self.total_sensors_label.setText(f"Sensores Totales: {len(all_sensors)}")
-            self.active_sensors_label.setText(f"Sensores Activos: {len(active_sensors)}")
-            
-            # Get alert stats
-            active_alerts = alert_repo.get_active_alerts(limit=1000)
-            self.active_alerts_label.setText(f"Alertas Activas: {len(active_alerts)}")
+            overview = self.dashboard_controller.get_overview()
+            self.total_sensors_label.setText(f"Sensores Totales: {overview['total_sensors']}")
+            self.active_sensors_label.setText(f"Sensores Activos: {overview['active_sensors']}")
+            self.active_alerts_label.setText(f"Alertas Activas: {overview['active_alerts']}")
             
         except Exception as e:
             self.total_sensors_label.setText(f"Error: {str(e)}")
