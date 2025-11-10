@@ -5,28 +5,20 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from desktop_app.core.database import db_manager
 from desktop_app.models.alert_rule_models import (
     AlertRule,
     AlertRuleCreate,
     AlertRuleStatus,
     AlertRuleUpdate,
 )
-from desktop_app.repositories.alert_repository import AlertRepository
-from desktop_app.repositories.alert_rule_repository import AlertRuleRepository
-from desktop_app.services.alert_rule_service import AlertRuleService
+from desktop_app.services.factories import get_alert_rule_service
 
 
 class AlertRuleController:
     """Provide CRUD functionality for alert rules."""
 
     def __init__(self) -> None:
-        mongo_db = db_manager.get_mongo_db()
-        redis_client = db_manager.get_redis_client()
-
-        self._rule_repo = AlertRuleRepository(mongo_db)
-        self._alert_repo = AlertRepository(mongo_db, redis_client)
-        self._rule_service = AlertRuleService(self._rule_repo, self._alert_repo)
+        self._rule_service = get_alert_rule_service()
 
     def list_rules(
         self,

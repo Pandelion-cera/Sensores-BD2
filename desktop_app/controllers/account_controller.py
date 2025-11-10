@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from desktop_app.core.database import db_manager
 from desktop_app.models.invoice_models import (
     Account,
     Invoice,
@@ -14,38 +13,20 @@ from desktop_app.models.invoice_models import (
     PaymentCreate,
     Payment,
 )
-from desktop_app.repositories.account_repository import AccountRepository
-from desktop_app.repositories.invoice_repository import InvoiceRepository
-from desktop_app.repositories.payment_repository import PaymentRepository
-from desktop_app.repositories.process_repository import ProcessRepository
-from desktop_app.services.account_service import AccountService
-from desktop_app.services.invoice_service import InvoiceService
-from desktop_app.services.payment_service import PaymentService
+from desktop_app.services.factories import (
+    get_account_service,
+    get_invoice_service,
+    get_payment_service,
+)
 
 
 class AccountController:
     """Provide cohesive access to account balances, invoices and payments."""
 
     def __init__(self) -> None:
-        mongo_db = db_manager.get_mongo_db()
-        neo4j_driver = db_manager.get_neo4j_driver()
-
-        self._account_repo = AccountRepository(mongo_db)
-        self._invoice_repo = InvoiceRepository(mongo_db)
-        self._payment_repo = PaymentRepository(mongo_db)
-        self._process_repo = ProcessRepository(mongo_db, neo4j_driver)
-
-        self._account_service = AccountService(self._account_repo)
-        self._invoice_service = InvoiceService(
-            self._invoice_repo,
-            self._process_repo,
-            self._account_service,
-        )
-        self._payment_service = PaymentService(
-            self._payment_repo,
-            self._invoice_repo,
-            self._account_repo,
-        )
+        self._account_service = get_account_service()
+        self._invoice_service = get_invoice_service()
+        self._payment_service = get_payment_service()
 
     # Account --------------------------------------------------------------------
     def get_account(self, user_id: str) -> Account:

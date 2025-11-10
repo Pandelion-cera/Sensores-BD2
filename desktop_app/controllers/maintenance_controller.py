@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from desktop_app.core.database import db_manager
 from desktop_app.models.maintenance_models import (
     MaintenanceRecord,
     MaintenanceRecordCreate,
@@ -13,28 +12,20 @@ from desktop_app.models.maintenance_models import (
 )
 from desktop_app.models.sensor_models import Sensor
 from desktop_app.models.user_models import User
-from desktop_app.repositories.maintenance_repository import MaintenanceRepository
-from desktop_app.repositories.sensor_repository import SensorRepository
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.services.maintenance_service import MaintenanceService
+from desktop_app.services.factories import (
+    get_maintenance_service,
+    get_sensor_service,
+    get_user_service,
+)
 
 
 class MaintenanceController:
     """Expose maintenance record CRUD operations."""
 
     def __init__(self) -> None:
-        mongo_db = db_manager.get_mongo_db()
-        neo4j_driver = db_manager.get_neo4j_driver()
-
-        self._maintenance_repo = MaintenanceRepository(mongo_db)
-        self._sensor_repo = SensorRepository(mongo_db)
-        self._user_repo = UserRepository(mongo_db, neo4j_driver)
-
-        self._maintenance_service = MaintenanceService(
-            self._maintenance_repo,
-            self._sensor_repo,
-            self._user_repo,
-        )
+        self._maintenance_service = get_maintenance_service()
+        self._sensor_service = get_sensor_service()
+        self._user_service = get_user_service()
 
     def list_records(self, *, skip: int = 0, limit: int = 100) -> List[MaintenanceRecord]:
         """Return maintenance records."""
@@ -57,12 +48,12 @@ class MaintenanceController:
         """Return sensor details for display."""
         if not sensor_id:
             return None
-        return self._sensor_repo.get_by_id(sensor_id)
+        return self._sensor_service.get_sensor(sensor_id)
 
     def get_user(self, user_id: str) -> Optional[User]:
         """Return user details for display."""
         if not user_id:
             return None
-        return self._user_repo.get_by_id(user_id)
+        return self._user_service.get_user(user_id)
 
 

@@ -6,31 +6,26 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from desktop_app.core.database import db_manager
 from desktop_app.models.alert_models import Alert, AlertStatus
 from desktop_app.models.process_models import Process
 from desktop_app.models.sensor_models import Sensor
 from desktop_app.models.user_models import User
-from desktop_app.repositories.alert_repository import AlertRepository
-from desktop_app.repositories.process_repository import ProcessRepository
-from desktop_app.repositories.sensor_repository import SensorRepository
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.services.alert_service import AlertService
+from desktop_app.services.factories import (
+    get_alert_service,
+    get_process_service,
+    get_sensor_service,
+    get_user_service,
+)
 
 
 class AlertController:
     """Exposes alert-centric use cases to the presentation layer."""
 
     def __init__(self) -> None:
-        mongo_db = db_manager.get_mongo_db()
-        redis_client = db_manager.get_redis_client()
-        neo4j_driver = db_manager.get_neo4j_driver()
-
-        self._alert_repo = AlertRepository(mongo_db, redis_client)
-        self._alert_service = AlertService(self._alert_repo)
-        self._sensor_repo = SensorRepository(mongo_db)
-        self._process_repo = ProcessRepository(mongo_db, neo4j_driver)
-        self._user_repo = UserRepository(mongo_db, neo4j_driver)
+        self._alert_service = get_alert_service()
+        self._sensor_service = get_sensor_service()
+        self._process_service = get_process_service()
+        self._user_service = get_user_service()
 
     def list_alerts(
         self,
@@ -62,25 +57,25 @@ class AlertController:
 
     def resolve_alert(self, alert_id: str) -> bool:
         """Mark an alert as finished."""
-        return self._alert_repo.update_status(alert_id, AlertStatus.FINISHED)
+        return self._alert_service.update_alert_status(alert_id, AlertStatus.FINISHED) is not None
 
     # Related entities -----------------------------------------------------------
     def get_sensor(self, sensor_id: str) -> Optional[Sensor]:
         """Return sensor details associated with an alert."""
         if not sensor_id:
             return None
-        return self._sensor_repo.get_by_sensor_id(sensor_id)
+        return self._sensor_service.get_sensor(sensor_id)
 
     def get_process(self, process_id: str) -> Optional[Process]:
         """Return process details associated with an alert."""
         if not process_id:
             return None
-        return self._process_repo.get_process(process_id)
+        return self._process_service.get_process(process_id)
 
     def get_user(self, user_id: str) -> Optional[User]:
         """Return user details for auditing alert ownership."""
         if not user_id:
             return None
-        return self._user_repo.get_by_id(user_id)
+        return self._user_service.get_user(user_id)
 
 

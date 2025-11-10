@@ -5,8 +5,6 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from desktop_app.core.config import settings
-from desktop_app.core.database import db_manager
 from desktop_app.models.process_models import (
     Execution,
     Process,
@@ -19,59 +17,18 @@ from desktop_app.models.scheduled_process_models import (
     ScheduledProcessCreate,
     ScheduledProcessUpdate,
 )
-from desktop_app.repositories.account_repository import AccountRepository
-from desktop_app.repositories.alert_repository import AlertRepository
-from desktop_app.repositories.alert_rule_repository import AlertRuleRepository
-from desktop_app.repositories.invoice_repository import InvoiceRepository
-from desktop_app.repositories.measurement_repository import MeasurementRepository
-from desktop_app.repositories.process_repository import ProcessRepository
-from desktop_app.repositories.scheduled_process_repository import ScheduledProcessRepository
-from desktop_app.repositories.sensor_repository import SensorRepository
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.services.account_service import AccountService
-from desktop_app.services.alert_rule_service import AlertRuleService
-from desktop_app.services.alert_service import AlertService
-from desktop_app.services.process_service import ProcessService
-from desktop_app.services.scheduled_process_service import ScheduledProcessService
+from desktop_app.services.factories import (
+    get_process_service,
+    get_scheduled_process_service,
+)
 
 
 class ProcessController:
     """Coordinate process-related use cases required by the UI."""
 
     def __init__(self) -> None:
-        mongo_db = db_manager.get_mongo_db()
-        cassandra_session = db_manager.get_cassandra_session()
-        neo4j_driver = db_manager.get_neo4j_driver()
-        redis_client = db_manager.get_redis_client()
-
-        self._process_repo = ProcessRepository(mongo_db, neo4j_driver)
-        self._measurement_repo = MeasurementRepository(
-            cassandra_session,
-            settings.CASSANDRA_KEYSPACE,
-        )
-        self._sensor_repo = SensorRepository(mongo_db)
-        self._user_repo = UserRepository(mongo_db, neo4j_driver)
-        self._invoice_repo = InvoiceRepository(mongo_db)
-        self._account_repo = AccountRepository(mongo_db)
-        self._account_service = AccountService(self._account_repo)
-        self._alert_repo = AlertRepository(mongo_db, redis_client)
-        self._alert_service = AlertService(self._alert_repo)
-        self._alert_rule_repo = AlertRuleRepository(mongo_db)
-        self._alert_rule_service = AlertRuleService(self._alert_rule_repo, self._alert_repo)
-
-        self._process_service = ProcessService(
-            self._process_repo,
-            self._measurement_repo,
-            self._sensor_repo,
-            self._user_repo,
-            self._invoice_repo,
-            self._account_service,
-            self._alert_service,
-            self._alert_rule_service,
-        )
-
-        self._schedule_repo = ScheduledProcessRepository(mongo_db)
-        self._schedule_service = ScheduledProcessService(self._schedule_repo)
+        self._process_service = get_process_service()
+        self._schedule_service = get_scheduled_process_service()
 
     # Processes ------------------------------------------------------------------
     def list_processes(self, *, skip: int = 0, limit: int = 100) -> List[Process]:

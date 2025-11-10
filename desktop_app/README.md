@@ -82,6 +82,7 @@ desktop_app/
 ├── models/                 # Pydantic models
 ├── repositories/           # Data access layer
 ├── services/               # Business logic
+│   └── factories.py        # Centralized service and repository wiring
 ├── controllers/            # Presentation-facing orchestrators (UI entry-points)
 ├── ui/                     # PyQt6 UI components
 │   ├── login_window.py    # Login/register dialog

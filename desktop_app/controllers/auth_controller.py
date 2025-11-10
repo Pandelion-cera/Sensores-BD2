@@ -8,10 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.user_repository import UserRepository
-from desktop_app.repositories.session_repository import SessionRepository
-from desktop_app.services.auth_service import AuthService
+from desktop_app.services.factories import get_auth_service
 from desktop_app.models.user_models import UserCreate, UserLogin
 
 
@@ -19,13 +16,7 @@ class AuthController:
     """High-level operations for authentication workflows."""
 
     def __init__(self) -> None:
-        mongo_db = db_manager.get_mongo_db()
-        redis_client = db_manager.get_redis_client()
-        neo4j_driver = db_manager.get_neo4j_driver()
-
-        self._user_repo = UserRepository(mongo_db, neo4j_driver)
-        self._session_repo = SessionRepository(redis_client, mongo_db)
-        self._auth_service = AuthService(self._user_repo, self._session_repo)
+        self._auth_service = get_auth_service()
 
     def login(self, credentials: UserLogin) -> Dict[str, Any]:
         """

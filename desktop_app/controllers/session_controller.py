@@ -5,31 +5,29 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from desktop_app.core.database import db_manager
-from desktop_app.repositories.session_repository import SessionRepository
-from desktop_app.repositories.user_repository import UserRepository
+from desktop_app.models.user_models import UserResponse
+from desktop_app.services.factories import (
+    get_session_service,
+    get_user_service,
+)
 
 
 class SessionController:
     """Expose session history utilities for administrative views."""
 
     def __init__(self) -> None:
-        mongo_db = db_manager.get_mongo_db()
-        redis_client = db_manager.get_redis_client()
-        neo4j_driver = db_manager.get_neo4j_driver()
+        self._session_service = get_session_service()
+        self._user_service = get_user_service()
 
-        self._session_repo = SessionRepository(redis_client, mongo_db)
-        self._user_repo = UserRepository(mongo_db, neo4j_driver)
-
-    def list_users(self, *, skip: int = 0, limit: int = 1000):
+    def list_users(self, *, skip: int = 0, limit: int = 1000) -> List[UserResponse]:
         """Return registered users."""
-        return self._user_repo.get_all(skip=skip, limit=limit)
+        return self._user_service.get_all_users(skip=skip, limit=limit)
 
     def get_user(self, user_id: str):
         """Return a user by identifier."""
         if not user_id:
             return None
-        return self._user_repo.get_by_id(user_id)
+        return self._user_service.get_user(user_id)
 
     def get_session_history(
         self,
@@ -39,7 +37,7 @@ class SessionController:
         limit: int = 200,
     ) -> List[Dict[str, object]]:
         """Return session history records."""
-        return self._session_repo.get_session_history(
+        return self._session_service.get_session_history(
             user_id=user_id,
             skip=skip,
             limit=limit,
