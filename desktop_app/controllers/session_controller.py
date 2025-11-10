@@ -18,7 +18,7 @@ class SessionController:
         redis_client = db_manager.get_redis_client()
         neo4j_driver = db_manager.get_neo4j_driver()
 
-        self._session_repo = SessionRepository(redis_client, mongo_db)
+        self._session_repo = SessionRepository(redis_client, mongo_db, neo4j_driver)
         self._user_repo = UserRepository(mongo_db, neo4j_driver)
 
     def list_users(self, *, skip: int = 0, limit: int = 1000):

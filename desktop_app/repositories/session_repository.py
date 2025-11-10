@@ -3,19 +3,20 @@ from datetime import datetime, timedelta
 import redis
 import json
 from pymongo.database import Database
+from neo4j import Driver
 from bson import ObjectId
 
 from desktop_app.models.session_models import Session, SessionCreate, SessionUpdate
 
 
 class SessionRepository:
-    def __init__(self, redis_client: redis.Redis, mongo_db: Optional[Database] = None):
+    def __init__(self, redis_client: redis.Redis, mongo_db: Optional[Database] = None, neo4j_driver: Optional[Driver] = None):
         self.redis = redis_client
         self.mongo_db = mongo_db
+        self.neo4j_driver = neo4j_driver
         self.session_prefix = "session:"
-        self.default_ttl = 86400  # 24 hours
+        self.default_ttl = 86400
         
-        # MongoDB collection for session history
         if mongo_db is not None:
             self.sessions_col = mongo_db["sessions"]
         else:
@@ -198,7 +199,19 @@ class SessionRepository:
                     except Exception:
                         pass
 
+            if user_id:
+                user_groups = self._fetch_user_groups(user_id)
+                session["user_groups"] = user_groups
+
             sessions.append(session)
         
         return sessions
 
+    def _fetch_user_groups(self, user_id: str) -> List[Dict[str, str]]:
+        """Fetch user groups from Neo4j"""
+        if self.neo4j_driver is None:
+            return []
+        
+        query = "MATCH (u:User {id: $user_id})-[:MEMBER_OF]->(g:Group) RETURN g.id AS id, g.name AS name"
+        result = self.neo4j_driver.session().run(query, user_id=user_id)
+        return [{"id": record["id"], "name": record["name"]} for record in result]

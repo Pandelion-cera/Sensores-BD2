@@ -3,10 +3,10 @@ Dashboard widget showing overview and statistics
 """
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QGroupBox
+    QGroupBox, QDateEdit
 )
-from PyQt6.QtCore import Qt
-
+from PyQt6.QtCore import Qt, QDate
+from datetime import datetime, timedelta
 from desktop_app.controllers import get_dashboard_controller
 from desktop_app.utils.session_manager import SessionManager
 
@@ -52,6 +52,32 @@ class DashboardWidget(QWidget):
         
         stats_group.setLayout(stats_layout)
         layout.addWidget(stats_group)
+
+        # Measurements group
+        measurements_group = QGroupBox("Mediciones")
+        measurements_layout = QHBoxLayout()
+        measurements_layout.addWidget(QLabel("Fecha Inicio:"))
+        self.start_date = QDateEdit()
+        self.start_date.setCalendarPopup(True)
+        self.start_date.setDate(QDate.currentDate().addDays(-7))
+        measurements_layout.addWidget(self.start_date)
+        
+        measurements_layout.addWidget(QLabel("Fecha Fin:"))
+        self.end_date = QDateEdit()
+        self.end_date.setCalendarPopup(True)
+        self.end_date.setDate(QDate.currentDate())
+        measurements_layout.addWidget(self.end_date)
+
+        search_btn = QPushButton("Buscar")
+        search_btn.clicked.connect(self.refresh)
+        measurements_layout.addWidget(search_btn)
+
+        self.total_measurements_label = QLabel("Mediciones Totales: -")
+        self.measurements_by_date_label = QLabel("Mediciones por Fecha: -")
+        measurements_layout.addWidget(self.total_measurements_label)
+        measurements_layout.addWidget(self.measurements_by_date_label)
+        measurements_group.setLayout(measurements_layout)
+        layout.addWidget(measurements_group)
         
         # Refresh button
         refresh_btn = QPushButton("Actualizar")
@@ -68,6 +94,14 @@ class DashboardWidget(QWidget):
             self.total_sensors_label.setText(f"Sensores Totales: {overview['total_sensors']}")
             self.active_sensors_label.setText(f"Sensores Activos: {overview['active_sensors']}")
             self.active_alerts_label.setText(f"Alertas Activas: {overview['active_alerts']}")
+
+            start_qdate = self.start_date.date()
+            end_qdate = self.end_date.date()
+            start_date = datetime(start_qdate.year(), start_qdate.month(), start_qdate.day())
+            end_date = datetime(end_qdate.year(), end_qdate.month(), end_qdate.day(), 23, 59, 59)
+            measurements = self.dashboard_controller.get_amount_of_measurements_by_date(start_date, end_date)
+            self.total_measurements_label.setText(f"Mediciones Totales: {measurements}")
+            self.measurements_by_date_label.setText(f"Mediciones por Fecha: {measurements}")
             
         except Exception as e:
             self.total_sensors_label.setText(f"Error: {str(e)}")

@@ -108,3 +108,7 @@ class SensorRepository:
         """Get unique list of cities for a country"""
         return self.collection.distinct("ciudad", {"pais": pais})
 
+    def get_amount_of_sensors_by_country(self, pais: str) -> int:
+        """Get amount of sensors by country"""
+        return self.collection.count_documents({"pais": pais})
+

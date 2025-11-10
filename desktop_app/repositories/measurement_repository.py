@@ -31,7 +31,15 @@ class MeasurementRepository:
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """
         )
-    
+
+        self.insert_by_date_stmt = self.session.prepare(
+            """
+            INSERT INTO measurements_by_date
+            (date_partition, timestamp, sensor_id, temperature, humidity)
+            VALUES (?, ?, ?, ?, ?)
+            """
+        )
+
     def create(
         self, 
         sensor_id: str, 
@@ -61,6 +69,18 @@ class MeasurementRepository:
             (
                 pais,
                 ciudad,
+                date_partition,
+                timestamp,
+                uuid.UUID(sensor_id),
+                measurement.temperature,
+                measurement.humidity
+            )
+        )
+        
+        # Insert into measurements_by_date
+        self.session.execute(
+            self.insert_by_date_stmt,
+            (
                 date_partition,
                 timestamp,
                 uuid.UUID(sensor_id),
@@ -192,4 +212,24 @@ class MeasurementRepository:
                 "avg": sum(humidities) / len(humidities) if humidities else None
             }
         }
+
+    def get_amount_of_measurements_by_date(self, start_date: datetime, end_date: datetime) -> int:
+        total = 0
+        current_date = start_date.date()
+        end_date_date = end_date.date()
+
+        while current_date <= end_date_date:
+            partition = current_date.strftime("%Y%m%d")
+            rows = self.session.execute(
+                """
+                SELECT COUNT(*)
+                FROM measurements_by_date
+                WHERE date_partition = %s
+                  AND timestamp >= %s AND timestamp <= %s
+                """,
+                (partition, start_date, end_date),
+            )
+            total += rows.one()[0]
+            current_date += timedelta(days=1)
+        return total
 

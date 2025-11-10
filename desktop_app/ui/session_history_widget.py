@@ -63,7 +63,7 @@ class SessionHistoryWidget(QWidget):
         layout.addWidget(filter_group)
 
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
+        self.table.setColumnCount(7)
         self.table.setHorizontalHeaderLabels(
             [
                 "Usuario",
@@ -72,6 +72,7 @@ class SessionHistoryWidget(QWidget):
                 "Inicio de sesión",
                 "Cierre de sesión",
                 "Duración",
+                "Grupos",
             ]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -135,12 +136,15 @@ class SessionHistoryWidget(QWidget):
 
             duration = self._calculate_duration(session.get("login_time"), logout_time_raw)
 
+            groups = ", ".join([group["name"] for group in session.get("user_groups", [])])
+
             self.table.setItem(row, 0, QTableWidgetItem(nombre))
             self.table.setItem(row, 1, QTableWidgetItem(email))
             self.table.setItem(row, 2, QTableWidgetItem(rol))
             self.table.setItem(row, 3, QTableWidgetItem(login_time))
             self.table.setItem(row, 4, QTableWidgetItem(logout_time or "Activa"))
             self.table.setItem(row, 5, QTableWidgetItem(duration))
+            self.table.setItem(row, 6, QTableWidgetItem(groups))
 
     def _fetch_user(self, user_id: Optional[str]) -> Dict[str, str]:
         if not user_id:
