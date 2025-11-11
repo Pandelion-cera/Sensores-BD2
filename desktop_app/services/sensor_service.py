@@ -211,7 +211,7 @@ class SensorService:
     def get_location_measurements(
         self,
         pais: str,
-        ciudad: str,
+        ciudad: Optional[str] = None,
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
@@ -221,13 +221,20 @@ class SensorService:
             end_date = datetime.utcnow()
         if not start_date:
             start_date = end_date - timedelta(days=1)
-        
-        measurements = self.measurement_repo.get_by_location(
-            pais,
-            ciudad,
-            start_date,
-            end_date
-        )
+
+        if ciudad:
+            measurements = self.measurement_repo.get_by_location(
+                pais,
+                ciudad,
+                start_date,
+                end_date
+            )
+        else:
+            measurements = self.measurement_repo.get_by_country(
+                pais,
+                start_date,
+                end_date
+            )
         
         # Map fields to Spanish
         return [
@@ -250,7 +257,7 @@ class SensorService:
         end_date: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """Get statistics for a location"""
-        # Default to last 24 hours
+        
         if not end_date:
             end_date = datetime.utcnow()
         if not start_date:

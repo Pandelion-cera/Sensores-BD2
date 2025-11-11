@@ -176,6 +176,7 @@ class MeasurementsWidget(QWidget):
         self.city_edit = QLineEdit()
         self.city_edit.setPlaceholderText("ej., Buenos Aires")
         location_layout.addWidget(self.city_edit)
+        location_layout.addWidget(QLabel("(Opcional; dejar vacío para buscar por país)"))
         filter_layout.addLayout(location_layout)
         
         # Date filters
@@ -290,9 +291,9 @@ class MeasurementsWidget(QWidget):
     def search_measurements(self):
         country = self.country_edit.text().strip()
         city = self.city_edit.text().strip()
-        
-        if not country or not city:
-            QMessageBox.warning(self, "Error de Validación", "Por favor ingrese país y ciudad")
+
+        if not country:
+            QMessageBox.warning(self, "Error de Validación", "Por favor ingrese un país")
             return
         
         try:
@@ -304,7 +305,7 @@ class MeasurementsWidget(QWidget):
             
             measurements = self.sensor_controller.get_location_measurements(
                 pais=country,
-                ciudad=city,
+                ciudad=city or None,
                 start_date=start_date,
                 end_date=end_date
             )

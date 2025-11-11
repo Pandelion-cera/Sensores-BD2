@@ -31,6 +31,14 @@ class MeasurementRepository:
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """
         )
+
+        self.insert_by_country_stmt = self.session.prepare(
+            """
+            INSERT INTO measurements_by_country
+            (country, date_partition, timestamp, city, sensor_id, temperature, humidity)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """
+        )
     
     def create(
         self, 
@@ -67,6 +75,20 @@ class MeasurementRepository:
                 measurement.temperature,
                 measurement.humidity
             )
+        )
+
+        # Insert into measurements_by_country (for country-level queries)
+        self.session.execute(
+            self.insert_by_country_stmt,
+            (
+                pais,
+                date_partition,
+                timestamp,
+                ciudad,
+                uuid.UUID(sensor_id),
+                measurement.temperature,
+                measurement.humidity,
+            ),
         )
         
         return Measurement(
@@ -114,6 +136,44 @@ class MeasurementRepository:
         
         return measurements
     
+    def get_by_country(
+        self,
+        pais: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> List[Dict[str, Any]]:
+        """Get measurements for a country in a date range"""
+        measurements: List[Dict[str, Any]] = []
+
+        current_date = start_date
+        while current_date <= end_date:
+            date_partition = current_date.strftime("%Y%m%d")
+            query = """
+                SELECT country, city, timestamp, sensor_id, temperature, humidity
+                FROM measurements_by_country
+                WHERE country = %s AND date_partition = %s
+                  AND timestamp >= %s AND timestamp <= %s
+            """
+            rows = self.session.execute(
+                query,
+                (pais, date_partition, start_date, end_date),
+            )
+            for row in rows:
+                measurements.append(
+                    {
+                        "pais": row.country,
+                        "ciudad": row.city,
+                        "sensor_id": str(row.sensor_id),
+                        "timestamp": row.timestamp,
+                        "temperature": row.temperature,
+                        "humidity": row.humidity,
+                    }
+                )
+
+            current_date += timedelta(days=1)
+
+        return measurements
+
     def get_by_location(
         self,
         pais: str,
@@ -191,5 +251,40 @@ class MeasurementRepository:
                 "min": min(humidities) if humidities else None,
                 "avg": sum(humidities) / len(humidities) if humidities else None
             }
+        }
+
+    def get_stats_by_country(
+        self,
+        pais: str,
+        start_date: datetime,
+        end_date: datetime,
+    ) -> Dict[str, Any]:
+        """Get statistics (max, min, avg) for a country"""
+        measurements = self.get_by_country(pais, start_date, end_date)
+
+        if not measurements:
+            return {
+                "pais": pais,
+                "count": 0,
+                "temperatura": {},
+                "humedad": {},
+            }
+
+        temps = [m["temperature"] for m in measurements if m["temperature"] is not None]
+        humidities = [m["humidity"] for m in measurements if m["humidity"] is not None]
+
+        return {
+            "pais": pais,
+            "count": len(measurements),
+            "temperatura": {
+                "max": max(temps) if temps else None,
+                "min": min(temps) if temps else None,
+                "avg": sum(temps) / len(temps) if temps else None,
+            },
+            "humedad": {
+                "max": max(humidities) if humidities else None,
+                "min": min(humidities) if humidities else None,
+                "avg": sum(humidities) / len(humidities) if humidities else None,
+            },
         }
 

@@ -314,7 +314,7 @@ class ProcessService:
         """Generate max/min temperature and humidity report"""
         logger.debug(f"Generating max/min report with parameters: {parametros}")
         pais = parametros.get("pais")
-        ciudad = parametros.get("ciudad")
+        ciudad = parametros.get("ciudad") or None
         
         fecha_inicio_str = parametros.get("fecha_inicio")
         fecha_fin_str = parametros.get("fecha_fin")
@@ -328,30 +328,99 @@ class ProcessService:
         fecha_fin = self._parse_date(fecha_fin_str)
         logger.debug(f"Date range: {fecha_inicio} to {fecha_fin}")
         
-        logger.info(f"Fetching statistics for location: {ciudad}, {pais}")
-        stats = self.measurement_repo.get_stats_by_location(
-            pais, ciudad, fecha_inicio, fecha_fin
-        )
+        location_descriptor = f"{ciudad}, {pais}" if ciudad else pais
+        logger.info(f"Fetching statistics for location: {location_descriptor}")
+        if ciudad:
+            stats = self.measurement_repo.get_stats_by_location(
+                pais, ciudad, fecha_inicio, fecha_fin
+            )
+        else:
+            stats = self.measurement_repo.get_stats_by_country(
+                pais, fecha_inicio, fecha_fin
+            )
         logger.info(f"Statistics retrieved: count={stats.get('count', 0)}, has temp stats: {bool(stats.get('temperatura'))}, has hum stats: {bool(stats.get('humedad'))}")
         
-        # Build results dict with stats embedded
+        temperatura_stats = stats.get("temperatura", {})
+        humedad_stats = stats.get("humedad", {})
+
+        # Build results dict keeping only max/min metrics
         result = {
             "tipo": "reporte_max_min",
             "pais": pais,
-            "ciudad": ciudad,
             "periodo": {
                 "inicio": fecha_inicio.isoformat(),
                 "fin": fecha_fin.isoformat()
             },
-            "resultados": stats  # This contains temperatura, humedad, count, etc.
+            "resultados": {
+                "count": stats.get("count", 0),
+                "temperatura": {
+                    "max": temperatura_stats.get("max"),
+                    "min": temperatura_stats.get("min"),
+                },
+                "humedad": {
+                    "max": humedad_stats.get("max"),
+                    "min": humedad_stats.get("min"),
+                },
+            },
         }
+        if ciudad:
+            result["ciudad"] = ciudad
         logger.debug(f"Report result structure: tipo={result['tipo']}, has resultados={bool(result.get('resultados'))}")
         return result
     
     def _execute_avg_report(self, parametros: Dict[str, Any]) -> Dict[str, Any]:
         """Generate average temperature and humidity report"""
-        # Similar to max/min but focusing on averages
-        return self._execute_max_min_report(parametros)
+        logger.debug(f"Generating average report with parameters: {parametros}")
+        pais = parametros.get("pais")
+        ciudad = parametros.get("ciudad") or None
+
+        fecha_inicio_str = parametros.get("fecha_inicio")
+        fecha_fin_str = parametros.get("fecha_fin")
+
+        if not fecha_inicio_str:
+            raise ValueError("fecha_inicio es requerida")
+        if not fecha_fin_str:
+            raise ValueError("fecha_fin es requerida")
+
+        fecha_inicio = self._parse_date(fecha_inicio_str)
+        fecha_fin = self._parse_date(fecha_fin_str)
+        logger.debug(f"Date range for averages: {fecha_inicio} to {fecha_fin}")
+
+        location_descriptor = f"{ciudad}, {pais}" if ciudad else pais
+        logger.info(f"Fetching statistics for averages at location: {location_descriptor}")
+        if ciudad:
+            stats = self.measurement_repo.get_stats_by_location(
+                pais, ciudad, fecha_inicio, fecha_fin
+            )
+        else:
+            stats = self.measurement_repo.get_stats_by_country(
+                pais, fecha_inicio, fecha_fin
+            )
+
+        temperatura_stats = stats.get("temperatura", {})
+        humedad_stats = stats.get("humedad", {})
+
+        result = {
+            "tipo": "informe_promedio",
+            "pais": pais,
+            "periodo": {
+                "inicio": fecha_inicio.isoformat(),
+                "fin": fecha_fin.isoformat()
+            },
+            "resultados": {
+                "count": stats.get("count", 0),
+                "temperatura": {
+                    "avg": temperatura_stats.get("avg"),
+                },
+                "humedad": {
+                    "avg": humedad_stats.get("avg"),
+                },
+            },
+        }
+        logger.debug("Average report built with temperature and humidity averages only")
+        if ciudad:
+            result["ciudad"] = ciudad
+        return result
     
     def _execute_online_query(self, parametros: Dict[str, Any]) -> Dict[str, Any]:
         """Execute online query for sensor data"""

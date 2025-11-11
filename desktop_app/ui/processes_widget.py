@@ -34,6 +34,10 @@ class ProcessRequestDialog(QDialog):
         self.is_alert_config = process.tipo == ProcessType.ALERT_CONFIG
         self._temp_sentinel = -999.0
         self._hum_sentinel = -1.0
+        self.city_required = process.tipo not in {
+            ProcessType.TEMP_MAX_MIN_REPORT,
+            ProcessType.TEMP_AVG_REPORT,
+        }
         self.init_ui()
     
     def init_ui(self):
@@ -67,9 +71,14 @@ class ProcessRequestDialog(QDialog):
         self.pais_edit.setPlaceholderText("Ej: Argentina")
         layout.addWidget(self.pais_edit)
         
-        layout.addWidget(QLabel("Ciudad *:"))
+        ciudad_label_text = "Ciudad *:" if self.city_required else "Ciudad (Opcional):"
+        self.ciudad_label = QLabel(ciudad_label_text)
+        layout.addWidget(self.ciudad_label)
         self.ciudad_edit = QLineEdit()
-        self.ciudad_edit.setPlaceholderText("Ej: Buenos Aires")
+        placeholder = "Ej: Buenos Aires"
+        if not self.city_required:
+            placeholder = "Ej: Buenos Aires (opcional)"
+        self.ciudad_edit.setPlaceholderText(placeholder)
         layout.addWidget(self.ciudad_edit)
         
         layout.addWidget(QLabel("Fecha Inicio *:"))
@@ -249,7 +258,7 @@ class ProcessRequestDialog(QDialog):
         ciudad = self.ciudad_edit.text().strip()
         if not pais:
             raise ValueError("Por favor ingrese el país")
-        if not ciudad:
+        if self.city_required and not ciudad:
             raise ValueError("Por favor ingrese la ciudad")
         
         fecha_inicio = self.fecha_inicio_edit.dateTime().toPyDateTime()
@@ -259,10 +268,11 @@ class ProcessRequestDialog(QDialog):
         
         self.parametros = {
             "pais": pais,
-            "ciudad": ciudad,
             "fecha_inicio": fecha_inicio.isoformat(),
             "fecha_fin": fecha_fin.isoformat()
         }
+        if ciudad:
+            self.parametros["ciudad"] = ciudad
     
     def _validate_alert_request(self) -> None:
         nombre = self.rule_name_edit.text().strip()
@@ -440,8 +450,18 @@ class ProcessResultsDialog(QDialog):
     def _format_report_results(self, resultado: dict, layout: QVBoxLayout):
         """Format report results (max/min or average)"""
         # Location info
-        if "pais" in resultado or "ciudad" in resultado:
-            location_label = QLabel(f"Ubicación: {resultado.get('ciudad', 'N/A')}, {resultado.get('pais', 'N/A')}")
+        pais = resultado.get("pais")
+        ciudad = resultado.get("ciudad")
+        tipo = resultado.get("tipo")
+
+        if pais or ciudad:
+            if pais and ciudad:
+                location_text = f"Ubicación: {ciudad}, {pais}"
+            elif pais:
+                location_text = f"Ubicación: {pais}"
+            else:
+                location_text = f"Ubicación: {ciudad}"
+            location_label = QLabel(location_text)
             location_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
             layout.addWidget(location_label)
         
@@ -467,39 +487,50 @@ class ProcessResultsDialog(QDialog):
                 if "temperatura" in resultados and "humedad" in resultados:
                     temp_stats = resultados.get("temperatura", {})
                     hum_stats = resultados.get("humedad", {})
-                    
-                    # Add rows for each statistic
-                    if temp_stats or hum_stats:
-                        for stat_name in ["max", "min", "avg"]:
-                            stat_label = {"max": "Máximo", "min": "Mínimo", "avg": "Promedio"}.get(stat_name, stat_name.title())
-                            table.insertRow(row)
-                            table.setItem(row, 0, QTableWidgetItem(stat_label))
-                            
-                            temp_val = temp_stats.get(stat_name) if isinstance(temp_stats, dict) else None
-                            hum_val = hum_stats.get(stat_name) if isinstance(hum_stats, dict) else None
-                            
-                            table.setItem(row, 1, QTableWidgetItem(f"{temp_val:.2f}" if temp_val is not None else "N/A"))
-                            table.setItem(row, 2, QTableWidgetItem(f"{hum_val:.2f}" if hum_val is not None else "N/A"))
-                            table.setItem(row, 3, QTableWidgetItem("°C / %"))
-                            row += 1
-                        
-                        # Add count if available
-                        if "count" in resultados:
-                            table.insertRow(row)
-                            table.setItem(row, 0, QTableWidgetItem("Cantidad de Mediciones"))
-                            table.setItem(row, 1, QTableWidgetItem(str(resultados.get("count", 0))))
-                            table.setItem(row, 2, QTableWidgetItem(""))
-                            table.setItem(row, 3, QTableWidgetItem(""))
-                            row += 1
+                    stat_labels = {
+                        "max": "Máximo",
+                        "min": "Mínimo",
+                        "avg": "Promedio",
+                    }
+                    if tipo == "reporte_max_min":
+                        relevant_stats = ["max", "min"]
+                    elif tipo in ["informe_promedio", "reporte_promedio"]:
+                        relevant_stats = ["avg"]
+                    else:
+                        relevant_stats = ["max", "min", "avg"]
+
+                    for stat_name in relevant_stats:
+                        temp_val = temp_stats.get(stat_name) if isinstance(temp_stats, dict) else None
+                        hum_val = hum_stats.get(stat_name) if isinstance(hum_stats, dict) else None
+                        if temp_val is None and hum_val is None:
+                            continue
+
+                        table.insertRow(row)
+                        table.setItem(row, 0, QTableWidgetItem(stat_labels.get(stat_name, stat_name.title())))
+                        table.setItem(row, 1, QTableWidgetItem(f"{temp_val:.2f}" if temp_val is not None else "N/A"))
+                        table.setItem(row, 2, QTableWidgetItem(f"{hum_val:.2f}" if hum_val is not None else "N/A"))
+                        table.setItem(row, 3, QTableWidgetItem("°C / %"))
+                        row += 1
+
+                    # Add count if available and greater than zero
+                    count_value = resultados.get("count")
+                    if isinstance(count_value, int) and count_value > 0:
+                        table.insertRow(row)
+                        table.setItem(row, 0, QTableWidgetItem("Cantidad de Mediciones"))
+                        table.setItem(row, 1, QTableWidgetItem(str(count_value)))
+                        table.setItem(row, 2, QTableWidgetItem(""))
+                        table.setItem(row, 3, QTableWidgetItem(""))
+                        row += 1
                 else:
                     # Old format - iterate through keys
                     for key, value in resultados.items():
                         if isinstance(value, dict):
-                            table.insertRow(row)
-                            table.setItem(row, 0, QTableWidgetItem(key.replace("_", " ").title()))
-                            
                             temp = value.get("temperatura")
                             hum = value.get("humedad")
+                            if temp is None and hum is None:
+                                continue
+                            table.insertRow(row)
+                            table.setItem(row, 0, QTableWidgetItem(key.replace("_", " ").title()))
                             
                             table.setItem(row, 1, QTableWidgetItem(f"{temp:.2f}" if temp is not None and isinstance(temp, (int, float)) else "N/A"))
                             table.setItem(row, 2, QTableWidgetItem(f"{hum:.2f}" if hum is not None and isinstance(hum, (int, float)) else "N/A"))
@@ -1222,6 +1253,8 @@ class ScheduleProcessDialog(QDialog):
         self.setWindowTitle("Programar Proceso")
         self.setMinimumWidth(500)
         self.schedule_data = None
+        self.process_lookup: Dict[str, Process] = {}
+        self.city_required = True
         self.init_ui()
         self.load_processes()
     
@@ -1233,6 +1266,7 @@ class ScheduleProcessDialog(QDialog):
         # Process selection
         layout.addWidget(QLabel("Proceso:"))
         self.process_combo = QComboBox()
+        self.process_combo.currentIndexChanged.connect(self._on_process_changed)
         layout.addWidget(self.process_combo)
         
         # Parameters (same as ProcessRequestDialog)
@@ -1244,7 +1278,8 @@ class ScheduleProcessDialog(QDialog):
         self.pais_edit.setPlaceholderText("Ej: Argentina")
         params_layout.addWidget(self.pais_edit)
         
-        params_layout.addWidget(QLabel("Ciudad *:"))
+        self.ciudad_label = QLabel("Ciudad *:")
+        params_layout.addWidget(self.ciudad_label)
         self.ciudad_edit = QLineEdit()
         self.ciudad_edit.setPlaceholderText("Ej: Buenos Aires")
         params_layout.addWidget(self.ciudad_edit)
@@ -1333,12 +1368,41 @@ class ScheduleProcessDialog(QDialog):
             processes = self.process_controller.list_processes(skip=0, limit=100)
             
             self.process_combo.clear()
+            self.process_lookup.clear()
             for process in processes:
                 self.process_combo.addItem(process.nombre, process.id)
+                self.process_lookup[process.id] = process
+            
+            current_id = self.process_combo.currentData()
+            self._update_city_requirement_by_process(current_id)
         
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Error al cargar procesos: {str(e)}")
     
+    def _on_process_changed(self, index: int):
+        process_id = self.process_combo.itemData(index)
+        self._update_city_requirement_by_process(process_id)
+
+    def _update_city_requirement_by_process(self, process_id: Optional[str]):
+        process = self.process_lookup.get(process_id)
+        if not process and process_id:
+            try:
+                process = self.process_controller.get_process(process_id)
+            except Exception:
+                process = None
+        self.city_required = True
+        if process and process.tipo in {
+            ProcessType.TEMP_MAX_MIN_REPORT,
+            ProcessType.TEMP_AVG_REPORT,
+        }:
+            self.city_required = False
+        label_text = "Ciudad *:" if self.city_required else "Ciudad (Opcional):"
+        self.ciudad_label.setText(label_text)
+        placeholder = "Ej: Buenos Aires" if self.city_required else "Ej: Buenos Aires (opcional)"
+        self.ciudad_edit.setPlaceholderText(placeholder)
+        if not self.city_required and not self.ciudad_edit.text().strip():
+            self.ciudad_edit.clear()
+
     def on_schedule_type_changed(self):
         """Update configuration widget based on schedule type"""
         # Clear existing config widgets (except time)
@@ -1400,11 +1464,15 @@ class ScheduleProcessDialog(QDialog):
                 return
             
             # Validate parameters
+            self._update_city_requirement_by_process(process_id)
             pais = self.pais_edit.text().strip()
             ciudad = self.ciudad_edit.text().strip()
             
-            if not pais or not ciudad:
+            if not pais:
                 QMessageBox.warning(self, "Error", "Por favor complete todos los campos requeridos")
+                return
+            if self.city_required and not ciudad:
+                QMessageBox.warning(self, "Error", "Por favor ingrese la ciudad")
                 return
             
             fecha_inicio = self.fecha_inicio_edit.dateTime().toPyDateTime()
@@ -1417,10 +1485,11 @@ class ScheduleProcessDialog(QDialog):
             # Build parameters
             parametros = {
                 "pais": pais,
-                "ciudad": ciudad,
                 "fecha_inicio": fecha_inicio.isoformat(),
                 "fecha_fin": fecha_fin.isoformat()
             }
+            if ciudad:
+                parametros["ciudad"] = ciudad
             
             # Determine schedule type
             if self.daily_radio.isChecked():
@@ -1486,6 +1555,7 @@ class EditScheduleDialog(ScheduleProcessDialog):
             index = self.process_combo.findData(process.id)
             if index >= 0:
                 self.process_combo.setCurrentIndex(index)
+                self._update_city_requirement_by_process(process.id)
         
         # Load parameters
         if "pais" in self.schedule.parametros:
@@ -1540,12 +1610,16 @@ class EditScheduleDialog(ScheduleProcessDialog):
                 QMessageBox.warning(self, "Error", "Por favor seleccione un proceso")
                 return
             
+            self._update_city_requirement_by_process(process_id)
             # Validate parameters
             pais = self.pais_edit.text().strip()
             ciudad = self.ciudad_edit.text().strip()
             
-            if not pais or not ciudad:
+            if not pais:
                 QMessageBox.warning(self, "Error", "Por favor complete todos los campos requeridos")
+                return
+            if self.city_required and not ciudad:
+                QMessageBox.warning(self, "Error", "Por favor ingrese la ciudad")
                 return
             
             fecha_inicio = self.fecha_inicio_edit.dateTime().toPyDateTime()
@@ -1558,10 +1632,11 @@ class EditScheduleDialog(ScheduleProcessDialog):
             # Build parameters
             parametros = {
                 "pais": pais,
-                "ciudad": ciudad,
                 "fecha_inicio": fecha_inicio.isoformat(),
                 "fecha_fin": fecha_fin.isoformat()
             }
+            if ciudad:
+                parametros["ciudad"] = ciudad
             
             # Determine schedule type
             if self.daily_radio.isChecked():

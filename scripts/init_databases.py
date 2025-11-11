@@ -115,6 +115,21 @@ def init_cassandra():
             PRIMARY KEY ((country, city, date_partition), timestamp)
         ) WITH CLUSTERING ORDER BY (timestamp DESC)
     """)
+
+    # Create measurements_by_country table
+    print("Creating measurements_by_country table...")
+    session.execute("""
+        CREATE TABLE IF NOT EXISTS measurements_by_country (
+            country TEXT,
+            date_partition TEXT,
+            timestamp TIMESTAMP,
+            city TEXT,
+            sensor_id UUID,
+            temperature DOUBLE,
+            humidity DOUBLE,
+            PRIMARY KEY ((country, date_partition), timestamp, sensor_id)
+        ) WITH CLUSTERING ORDER BY (timestamp DESC)
+    """)
     
     print("Cassandra tables created successfully")
 
